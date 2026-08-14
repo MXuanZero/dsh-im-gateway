@@ -1,0 +1,6 @@
+# dsh-im-gateway bundle patch: 把聚合 IM 网关插入 profile 组合层。
+# 安装：dsh plugin --profile <name> add <本目录>
+# 行名通过 profile 目录的 node_modules 解析（bundle 由 dsh plugin add 安装在那里）。
+- insert:
+    - id: im-gateway
+      name: 'dsh-im-gateway'

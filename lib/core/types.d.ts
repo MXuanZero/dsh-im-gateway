@@ -1,0 +1,165 @@
+/**
+ * dsh-im-gateway 核心类型：统一 IM 渠道契约。
+ *
+ * 每个渠道（Telegram / Discord / 飞书 / 微信 / QQ …）实现 {@link ChannelAdapter}，
+ * 由 {@link ImGateway} 统一负责：会话路由、白名单、命令、审批桥、分片投递。
+ * @module dsh-im-gateway/core/types
+ */
+/** 统一入站消息：渠道层把各自的消息归一成这个形状交给网关。 */
+export interface ImMessage {
+    /** 渠道内唯一的会话标识（私聊 id / 群 id / 话题 id，字符串化）。 */
+    chatId: string;
+    /** 发送者 id（字符串化），白名单与审计用；群消息为发言者本人。 */
+    userId?: string;
+    /** 发送者显示名（可选，用于日志）。 */
+    username?: string;
+    /** 消息文本（文本类消息；图片/文件等媒体 v0.1 暂不桥接）。 */
+    text: string;
+    /** 渠道特定上下文，回复时原样回传（如 iLink context_token）。 */
+    context?: Record<string, unknown>;
+}
+/** 渠道发送选项。 */
+export interface SendOptions {
+    /** 打字指示等状态动作（渠道不支持时忽略）。 */
+    action?: 'typing';
+}
+/** 渠道适配器契约：一个渠道 = 一个 adapter。 */
+export interface ChannelAdapter {
+    /** 渠道 id（小写连字符，如 `telegram`、`feishu`）。 */
+    readonly id: string;
+    /** 渠道展示名（如 `Telegram`）。 */
+    readonly label: string;
+    /** 单条消息长度上限（字符），网关按此分片。 */
+    readonly maxMessageLength: number;
+    /** 启动（建立连接 / 开始轮询 / 扫码登录）。重复调用应幂等。 */
+    start(): void | Promise<void>;
+    /** 停止并释放资源。重复调用应幂等。 */
+    stop(): void | Promise<void>;
+    /** 发送文本到指定 chat（网关已按 maxMessageLength 分片，每片调用一次）。 */
+    send(chatId: string, text: string, options?: SendOptions): Promise<void>;
+    /** 打字指示（可选）。 */
+    sendAction?(chatId: string, action: 'typing'): Promise<void>;
+    /** 注册入站消息处理器（网关在 start 前调用一次）。 */
+    setMessageHandler(handler: (msg: ImMessage) => void | Promise<void>): void;
+    /** 当前状态摘要（用于 `/status` 命令），如登录态/扫码链接。 */
+    status?(): string;
+}
+/** 网关对渠道的运行时句柄。 */
+export interface ChannelRuntime {
+    readonly channel: ChannelAdapter;
+    /** 是否已完成登录/就绪（未就绪时入站消息仍会缓存并转发）。 */
+    ready: boolean;
+    /** 渠道当前状态文本（登录/轮询/错误）。 */
+    statusText: string;
+}
+/** 网关配置（schema 在 index.ts 中声明，此处为纯类型）。 */
+export interface ImGatewayConfig {
+    /** 每个渠道的启用开关与凭据；未配置的渠道保持关闭。 */
+    channels: {
+        telegram?: ChannelConfig & {
+            token?: string;
+        };
+        discord?: ChannelConfig & {
+            token?: string;
+        };
+        slack?: ChannelConfig & {
+            token?: string;
+            appToken?: string;
+        };
+        feishu?: ChannelConfig & {
+            appId?: string;
+            appSecret?: string;
+        };
+        wechat?: ChannelConfig;
+        qqbot?: ChannelConfig & {
+            appId?: string;
+            appSecret?: string;
+        };
+        whatsapp?: ChannelConfig;
+        signal?: ChannelConfig & {
+            cli?: string;
+            phone?: string;
+        };
+        msteams?: ChannelConfig & {
+            appId?: string;
+            appPassword?: string;
+        };
+        line?: ChannelConfig & {
+            channelSecret?: string;
+            channelToken?: string;
+        };
+        matrix?: ChannelConfig & {
+            homeserver?: string;
+            userId?: string;
+            accessToken?: string;
+        };
+        mattermost?: ChannelConfig & {
+            serverUrl?: string;
+            token?: string;
+        };
+        googlechat?: ChannelConfig & {
+            webhookUrl?: string;
+        };
+        irc?: ChannelConfig & {
+            server?: string;
+            nick?: string;
+            password?: string;
+        };
+        twitch?: ChannelConfig & {
+            channel?: string;
+            token?: string;
+        };
+        nostr?: ChannelConfig & {
+            relays?: string[];
+            privateKey?: string;
+        };
+        nextcloud?: ChannelConfig & {
+            serverUrl?: string;
+            user?: string;
+            password?: string;
+        };
+        synology?: ChannelConfig & {
+            webhookUrl?: string;
+        };
+        tlon?: ChannelConfig;
+        zalo?: ChannelConfig & {
+            accessToken?: string;
+        };
+        yuanbao?: ChannelConfig;
+        imessage?: ChannelConfig & {
+            imsgPath?: string;
+        };
+        voice?: ChannelConfig;
+        webchat?: ChannelConfig & {
+            port?: number;
+            token?: string;
+        };
+    };
+    /** 会话模式：per-chat（每聊天一个 agent 会话，默认）| bound（绑定现有会话）。 */
+    sessionMode: 'per-chat' | 'bound';
+    /** agent 工作目录。 */
+    cwd: string;
+    /** agent provider（默认跟随 dsh agent-default-model）。 */
+    provider: string;
+    /** agent 模型（默认跟随 dsh agent-default-model）。 */
+    model: string;
+    /** 全局放行所有用户（仅开发）。 */
+    allowAllUsers: boolean;
+    /** 全局白名单：{ channelId: string[] } 或扁平数组（匹配任意渠道 userId）。 */
+    allowedUserIds: Record<string, string[]>;
+    /** 手机多段输入合并窗口（秒）。 */
+    mergeTimeoutSecs: number;
+    /** 合并缓冲达到该字符数先回执「收到，处理中」。 */
+    longInputAckChars: number;
+    /** 审批超时（秒），超时转回本机批准体系。 */
+    approvalTimeoutSecs: number;
+    /** 每轮结束是否推送摘要。 */
+    summaryOnTurnEnd: boolean;
+    /** 状态/登录文件的落盘目录（默认 $DSH_HOME/dsh-im-gateway）。 */
+    stateDir: string;
+}
+/** 渠道通用配置（每个渠道在 enabled 时才会被启动）。 */
+export interface ChannelConfig {
+    enabled?: boolean;
+}
+//# sourceMappingURL=types.d.ts.map
