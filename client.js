@@ -190,6 +190,7 @@ window.__ModuleLoader__.load({
     // ── 主面板 ────────────────────────────────────────────────────────────
     function ChannelPanel() {
       const [channels, setChannels] = useState(null);
+      const [pending, setPending] = useState([]);
       const [busy, setBusy] = useState({});
       const [expanded, setExpanded] = useState({});
       const [error, setError] = useState("");
@@ -198,7 +199,12 @@ window.__ModuleLoader__.load({
 
       const refresh = useCallback(() => {
         api("/channels")
-          .then((d) => { if (d.ok) setChannels(d.channels); })
+          .then((d) => {
+            if (d.ok) {
+              setChannels(d.channels);
+              setPending(d.pending || []);
+            }
+          })
           .catch(() => setError("无法连接网关 API"));
       }, []);
 
@@ -208,16 +214,32 @@ window.__ModuleLoader__.load({
         return () => { if (timerRef.current) clearInterval(timerRef.current); };
       }, [refresh]);
 
-      // 等待扫码/连接中时轮询状态（2.5s）
+      // 等待扫码/连接中/有待授权时轮询状态（2.5s）
       useEffect(() => {
         if (timerRef.current) clearInterval(timerRef.current);
         const anyWaiting = (channels || []).some((c) =>
           c.running && (c.loginUrl || c.status === "等待扫码" || c.status === "登录中") || busyRef.current[c.id],
-        );
+        ) || (pending || []).length > 0;
         if (anyWaiting) {
           timerRef.current = setInterval(refresh, 2500);
         }
-      }, [channels, refresh]);
+      }, [channels, pending, refresh]);
+
+      const onDecide = (channelId, userId, action) => {
+        busyRef.current = { ...busyRef.current, [`decide:${channelId}:${userId}`]: true };
+        setBusy({ ...busyRef.current });
+        api(`/channels/${channelId}/${action}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ userId }),
+        })
+          .then(() => refresh())
+          .catch(() => setError("请求失败"))
+          .finally(() => {
+            busyRef.current = { ...busyRef.current, [`decide:${channelId}:${userId}`]: false };
+            setBusy({ ...busyRef.current });
+          });
+      };
 
       const onAction = (id, action, body) => {
         busyRef.current = { ...busyRef.current, [id]: true };
@@ -246,19 +268,42 @@ window.__ModuleLoader__.load({
       if (channels === null) {
         body = h("div", { className: "imgw-loading" }, "加载渠道列表…");
       } else {
-        body = h("div", { className: "imgw-grid" },
-          ...channels.map((ch) =>
-            h(ChannelCard, {
-              key: ch.id, ch, busy, expanded,
-              onToggleExpand, onAction,
-            }),
+        // 待授权横幅（跨渠道聚合）
+        const pendingBlock = (pending || []).length > 0
+          ? h("div", { className: "imgw-pending" },
+              h("div", { className: "imgw-pending-title" }, "🔔 有用户请求访问"),
+              ...pending.map((p) => {
+                const meta = (channels || []).find((c) => c.id === p.channelId);
+                const key = `${p.channelId}:${p.userId}`;
+                const deciding = busy[`decide:${key}`];
+                return h("div", { key, className: "imgw-pending-row" },
+                  h("div", { className: "imgw-pending-info" },
+                    `${meta ? meta.emoji + " " + meta.label : p.channelId} · ${p.username || "未知用户"}`,
+                    h("div", { className: "imgw-pending-id" }, p.userId),
+                  ),
+                  h("button", { className: "imgw-btn small", disabled: deciding, onClick: () => onDecide(p.channelId, p.userId, "approve") },
+                    deciding ? "处理中…" : "允许"),
+                  h("button", { className: "imgw-btn small danger", disabled: deciding, onClick: () => onDecide(p.channelId, p.userId, "deny") }, "拒绝"),
+                );
+              }),
+            )
+          : null;
+        body = h("div", null,
+          pendingBlock,
+          h("div", { className: "imgw-grid" },
+            ...channels.map((ch) =>
+              h(ChannelCard, {
+                key: ch.id, ch, busy, expanded,
+                onToggleExpand, onAction,
+              }),
+            ),
           ),
         );
       }
 
       return h("div", { className: "imgw-panel" },
         h("div", { className: "imgw-head" }, h("h2", null, "🐋 IM 网关"), h("span", { className: "imgw-hint" }, "把 dsh agent 接入你的聊天软件")),
-        h("p", { className: "imgw-sub" }, "选择一个渠道连接：微信/WhatsApp 扫码即连，其余填凭据即可。连接后直接在聊天软件里指挥 agent。"),
+        h("p", { className: "imgw-sub" }, "选择一个渠道连接：微信/WhatsApp 扫码即连，其余填凭据即可。连接后直接在聊天软件里指挥 agent；首次发消息会出现在上面的授权请求里。"),
         error && h("div", { className: "imgw-error" }, `⚠️ ${error}`),
         body,
       );

@@ -56,6 +56,8 @@ export interface GatewayOptions {
   /** 登录状态落盘目录（扫码链接等）。 */
   stateDir: string
   log: (line: string) => void
+  /** 未授权用户触达时回调（如登记待授权请求）。返回给用户的提示文案（默认引导去设置批准）。 */
+  onUnauthorized?: (channelId: string, msg: ImMessage) => string
 }
 
 export class ImGateway {
@@ -70,12 +72,17 @@ export class ImGateway {
   private readonly mergeBuffers = new Map<string, string>()
   private readonly disposeEvents: Array<() => void> = []
   private readonly disposeTools: Array<() => void> = []
+  /** 未授权回调（manager 登记待授权请求用）；options.onUnauthorized 兜底。 */
+  private unauthorizedHandler: ((channelId: string, msg: ImMessage) => string) | undefined
+  /** UI 批准的渠道白名单（manager 同步），重启后由 manager 重新灌入。 */
+  private readonly extraAllowlist = new Map<string, Set<string>>()
 
   constructor(ctx: Context, options: GatewayOptions) {
     this.ctx = ctx
     this.config = options.config
     this.stateDir = options.stateDir
     this.logLine = options.log
+    this.unauthorizedHandler = options.onUnauthorized
     this.router = new SessionRouter(ctx, {
       cwd: this.config.cwd,
       provider: this.config.provider,
@@ -131,6 +138,21 @@ export class ImGateway {
     return [...this.channels.values()]
   }
 
+  /** 设置未授权回调（manager 构造后接线用）。 */
+  setUnauthorizedHandler(handler: (channelId: string, msg: ImMessage) => string): void {
+    this.unauthorizedHandler = handler
+  }
+
+  /** 添加 UI 批准的渠道白名单用户（manager 同步调用；重启后重新灌入）。 */
+  addAuthorizedUser(channelId: string, userId: string): void {
+    let set = this.extraAllowlist.get(channelId)
+    if (!set) {
+      set = new Set()
+      this.extraAllowlist.set(channelId, set)
+    }
+    set.add(userId)
+  }
+
   // ── 入站流水线 ────────────────────────────────────────────
 
   private async handleInbound(channelId: string, msg: ImMessage): Promise<void> {
@@ -156,8 +178,9 @@ export class ImGateway {
       // 3. 白名单：渠道本地授权（如微信扫码用户）优先，其次网关全局白名单
       const localAuth = channel.authorizes?.(msg.userId ?? '')
       if (localAuth === false || (localAuth === undefined && !this.authorized(channelId, msg.userId))) {
-        this.logLine(`[${channelId}] 忽略非白名单用户 ${msg.userId ?? '(匿名)'}`)
-        await channel.send(msg.chatId, '⛔ 未授权：你的账号不在白名单中。').catch(() => undefined)
+        this.logLine(`[${channelId}] 未授权用户 ${msg.userId ?? '(匿名)'} 消息被拦截（已登记待授权）`)
+        const reply = this.unauthorizedHandler?.(channelId, msg) ?? '⛔ 未授权：请在 dsh 设置 → IM 网关 中批准你的访问请求。'
+        await channel.send(msg.chatId, reply).catch(() => undefined)
         return
       }
       // 4. 媒体消息：直接注入（不过合并窗口）
@@ -343,6 +366,9 @@ export class ImGateway {
     // 扁平兜底：keys 为 * 或空时按全局名单
     const global = this.config.allowedUserIds['*']
     if (global && global.includes(userId)) return true
+    // UI 批准的渠道白名单
+    const extra = this.extraAllowlist.get(channelId)
+    if (extra && extra.has(userId)) return true
     return false
   }
 

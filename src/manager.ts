@@ -33,6 +33,8 @@ export interface ChannelView {
   loginUrl?: string
   /** 已配置的凭据键（脱敏，仅显示哪些已填）。 */
   configuredKeys: string[]
+  /** UI 批准的渠道白名单用户。 */
+  allowlist: string[]
 }
 
 export interface ManagerOptions {
@@ -47,6 +49,10 @@ export class ChannelManager {
   private readonly options: ManagerOptions
   private readonly stateFile: string
   private store: Record<string, Record<string, unknown>>
+  /** 渠道级白名单（UI 批准的用户）：channelId → userId[]。 */
+  private allowlist: Record<string, string[]>
+  /** 待授权请求：channelId → 请求列表。 */
+  private pending: Record<string, Array<{ userId: string; username?: string; chatId?: string; time: number }>>
   /** 运行中的 adapter：id → { adapter }。 */
   private readonly running = new Map<string, ChannelAdapter>()
 
@@ -54,26 +60,98 @@ export class ChannelManager {
     this.ctx = ctx
     this.options = options
     this.stateFile = join(options.stateDir, 'channels.json')
-    this.store = this.load()
+    const loaded = this.load()
+    this.store = loaded.channels
+    this.allowlist = loaded.allowlist
+    this.pending = loaded.pending
   }
 
-  private load(): Record<string, Record<string, unknown>> {
+  private load(): { channels: Record<string, Record<string, unknown>>; allowlist: Record<string, string[]>; pending: Record<string, Array<{ userId: string; username?: string; chatId?: string; time: number }>> } {
     try {
       const raw = readFileSync(this.stateFile, 'utf8')
-      const parsed = JSON.parse(raw) as { channels?: Record<string, Record<string, unknown>> }
-      return parsed.channels ?? {}
+      const parsed = JSON.parse(raw) as {
+        channels?: Record<string, Record<string, unknown>>
+        allowlist?: Record<string, string[]>
+        pending?: Record<string, Array<{ userId: string; username?: string; chatId?: string; time: number }>>
+      }
+      return {
+        channels: parsed.channels ?? {},
+        allowlist: parsed.allowlist ?? {},
+        pending: parsed.pending ?? {},
+      }
     } catch {
-      return {}
+      return { channels: {}, allowlist: {}, pending: {} }
     }
   }
 
   private flush(): void {
     try {
       mkdirSync(this.options.stateDir, { recursive: true })
-      writeFileSync(this.stateFile, JSON.stringify({ channels: this.store }, null, 2))
+      writeFileSync(this.stateFile, JSON.stringify({ channels: this.store, allowlist: this.allowlist, pending: this.pending }, null, 2))
     } catch (err) {
       this.options.log(`[manager] 状态落盘失败: ${err instanceof Error ? err.message : String(err)}`)
     }
+  }
+
+  // ── 授权 ─────────────────────────────────────────────────────
+
+  /** 该用户是否已获授权（UI allowlist 或 cordis 配置白名单）。 */
+  isAuthorized(channelId: string, userId: string): boolean {
+    if (this.options.config.allowAllUsers) return true
+    const fromAllowlist = this.allowlist[channelId]
+    if (fromAllowlist && fromAllowlist.includes(userId)) return true
+    const perChannel = this.options.config.allowedUserIds[channelId]
+    if (perChannel && perChannel.includes(userId)) return true
+    const global = this.options.config.allowedUserIds['*']
+    if (global && global.includes(userId)) return true
+    return false
+  }
+
+  /** 记录一个待授权请求（去重）。 */
+  requestAuthorization(channelId: string, userId: string, username?: string, chatId?: string): void {
+    const list = this.pending[channelId] ?? []
+    if (!list.some((p) => p.userId === userId)) {
+      list.push({ userId, username, chatId, time: Date.now() })
+      this.pending[channelId] = list
+      this.flush()
+      this.options.log(`[manager] ${channelId} 有待授权请求：${username ?? userId}`)
+    }
+  }
+
+  /** 批准用户：加入渠道白名单并同步网关。 */
+  approve(channelId: string, userId: string): { ok: boolean; error?: string } {
+    const list = this.allowlist[channelId] ?? []
+    if (!list.includes(userId)) {
+      list.push(userId)
+      this.allowlist[channelId] = list
+    }
+    this.options.gateway.addAuthorizedUser(channelId, userId)
+    this.removePending(channelId, userId)
+    this.flush()
+    this.options.log(`[manager] 已授权 ${channelId} 用户 ${userId}`)
+    return { ok: true }
+  }
+
+  /** 拒绝用户：仅移除待授权请求。 */
+  deny(channelId: string, userId: string): void {
+    this.removePending(channelId, userId)
+    this.flush()
+  }
+
+  private removePending(channelId: string, userId: string): void {
+    const list = this.pending[channelId]
+    if (!list) return
+    this.pending[channelId] = list.filter((p) => p.userId !== userId)
+    if (this.pending[channelId]!.length === 0) delete this.pending[channelId]
+  }
+
+  /** 全部待授权请求（跨渠道聚合，UI 横幅用）。 */
+  pendingRequests(): Array<{ channelId: string; userId: string; username?: string; time: number }> {
+    const out: Array<{ channelId: string; userId: string; username?: string; time: number }> = []
+    for (const [channelId, list] of Object.entries(this.pending)) {
+      for (const p of list) out.push({ channelId, userId: p.userId, username: p.username, time: p.time })
+    }
+    return out
   }
 
   /** 合并配置：channels.json（UI）优先，cordis config 兜底。 */
@@ -82,8 +160,12 @@ export class ChannelManager {
     return { ...cordis, ...(this.store[id] ?? {}) }
   }
 
-  /** 启动时初始化：合并配置中 enabled 或带凭据的渠道全部启动。 */
+  /** 启动时初始化：合并配置中 enabled 或带凭据的渠道全部启动；并把持久化白名单灌入网关。 */
   async initAll(): Promise<void> {
+    // 重启后恢复 UI 批准的渠道白名单
+    for (const [channelId, users] of Object.entries(this.allowlist)) {
+      for (const userId of users) this.options.gateway.addAuthorizedUser(channelId, userId)
+    }
     for (const id of CHANNEL_IDS) {
       const cfg = this.mergedConfig(id)
       const enabled = cfg.enabled === true || (this.store[id]?.enabled === true)
@@ -93,6 +175,11 @@ export class ChannelManager {
         })
       }
     }
+  }
+
+  /** 持久化白名单条目（重启恢复用）。 */
+  allowlistEntries(): Array<[string, string[]]> {
+    return Object.entries(this.allowlist)
   }
 
   /** 启用并启动一个渠道。extra 里的字段合并进配置并持久化。 */
@@ -167,6 +254,7 @@ export class ChannelManager {
         status: adapter?.status?.() ?? '未连接',
         loginUrl: adapter?.loginUrl?.(),
         configuredKeys: Object.keys(cfg).filter((k) => k !== 'enabled' && cfg[k] !== undefined && cfg[k] !== ''),
+        allowlist: this.allowlist[id] ?? [],
       })
     }
     return out
@@ -197,7 +285,7 @@ export class ChannelManager {
         const parts = url.pathname.split('/').filter(Boolean) // [dsh-im-gateway, api, ...]
         // /dsh-im-gateway/api/channels
         if (parts[2] === 'channels' && parts.length === 3 && req.method === 'GET') {
-          send(res, 200, { ok: true, channels: this.list() })
+          send(res, 200, { ok: true, channels: this.list(), pending: this.pendingRequests() })
           return
         }
         // /dsh-im-gateway/api/channels/<id>/connect|disconnect|refresh
@@ -222,6 +310,20 @@ export class ChannelManager {
           if (action === 'refresh') {
             const result = await this.refreshLogin(id)
             send(res, result.ok ? 200 : 400, result.ok ? { ok: true, channel: this.list().find((c) => c.id === id) } : { ok: false, error: result.error })
+            return
+          }
+          if (action === 'approve') {
+            const userId = String(body.userId ?? '')
+            if (!userId) { send(res, 400, { ok: false, error: '缺少 userId' }); return }
+            this.approve(id, userId)
+            send(res, 200, { ok: true, channel: this.list().find((c) => c.id === id) })
+            return
+          }
+          if (action === 'deny') {
+            const userId = String(body.userId ?? '')
+            if (!userId) { send(res, 400, { ok: false, error: '缺少 userId' }); return }
+            this.deny(id, userId)
+            send(res, 200, { ok: true, channel: this.list().find((c) => c.id === id) })
             return
           }
           send(res, 404, { ok: false, error: `unknown action ${action}` })

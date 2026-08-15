@@ -9,12 +9,14 @@
  */
 import type { Context } from '@deepseek-ai/cordis';
 import { type MergeResult } from './merge.js';
-import type { ChannelAdapter, ImGatewayConfig } from './types.js';
+import type { ChannelAdapter, ImGatewayConfig, ImMessage } from './types.js';
 export interface GatewayOptions {
     config: ImGatewayConfig;
     /** 登录状态落盘目录（扫码链接等）。 */
     stateDir: string;
     log: (line: string) => void;
+    /** 未授权用户触达时回调（如登记待授权请求）。返回给用户的提示文案（默认引导去设置批准）。 */
+    onUnauthorized?: (channelId: string, msg: ImMessage) => string;
 }
 export declare class ImGateway {
     private readonly ctx;
@@ -28,11 +30,19 @@ export declare class ImGateway {
     private readonly mergeBuffers;
     private readonly disposeEvents;
     private readonly disposeTools;
+    /** 未授权回调（manager 登记待授权请求用）；options.onUnauthorized 兜底。 */
+    private unauthorizedHandler;
+    /** UI 批准的渠道白名单（manager 同步），重启后由 manager 重新灌入。 */
+    private readonly extraAllowlist;
     constructor(ctx: Context, options: GatewayOptions);
     register(channel: ChannelAdapter): void;
     unregister(channelId: string): void;
     channel(channelId: string): ChannelAdapter | undefined;
     listChannels(): ChannelAdapter[];
+    /** 设置未授权回调（manager 构造后接线用）。 */
+    setUnauthorizedHandler(handler: (channelId: string, msg: ImMessage) => string): void;
+    /** 添加 UI 批准的渠道白名单用户（manager 同步调用；重启后重新灌入）。 */
+    addAuthorizedUser(channelId: string, userId: string): void;
     private handleInbound;
     /** 把媒体消息组装成 content blocks（图片走 attachments → image block；文件/视频注明路径）。 */
     private buildMediaBlocks;

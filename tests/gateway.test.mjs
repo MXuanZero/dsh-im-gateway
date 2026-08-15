@@ -144,6 +144,48 @@ test('渠道本地授权（微信扫码用户）优先于全局白名单', async
   gw.dispose()
 })
 
+test('未授权用户触发 onUnauthorized 回调并收到引导文案', async () => {
+  const ctx = makeCtx()
+  const seen = []
+  const cfg = { ...baseConfig, allowAllUsers: false, allowedUserIds: {} }
+  const gw = new ImGateway(ctx, { config: cfg, stateDir: '/tmp', log: () => {} })
+  gw.setUnauthorizedHandler((channelId, msg) => {
+    seen.push({ channelId, userId: msg.userId, username: msg.username })
+    return '⛔ 未授权：请先批准。'
+  })
+  const { channel, sent } = makeChannel()
+  gw.register(channel)
+
+  await channel.handler({ chatId: 'c1', userId: 'u-new', username: '小明', text: '你好!!' })
+  assert.equal(seen.length, 1, '应登记待授权请求')
+  assert.equal(seen[0].channelId, 'test')
+  assert.equal(seen[0].userId, 'u-new')
+  assert.equal(seen[0].username, '小明')
+  assert.ok(sent.some((s) => s.text.includes('请先批准')), '应返回自定义引导文案')
+  assert.equal(ctx._agents.size, 0, '未授权用户不应创建会话')
+
+  gw.dispose()
+})
+
+test('addAuthorizedUser 后用户放行', async () => {
+  const ctx = makeCtx()
+  const cfg = { ...baseConfig, allowAllUsers: false, allowedUserIds: {} }
+  const gw = new ImGateway(ctx, { config: cfg, stateDir: '/tmp', log: () => {} })
+  const { channel } = makeChannel()
+  gw.register(channel)
+
+  // 先拦截
+  await channel.handler({ chatId: 'c1', userId: 'u9', text: '你好!!' })
+  assert.equal(ctx._agents.size, 0)
+
+  // UI 批准后放行
+  gw.addAuthorizedUser('test', 'u9')
+  await channel.handler({ chatId: 'c1', userId: 'u9', text: '你好!!' })
+  assert.equal(ctx._agents.size, 1)
+
+  gw.dispose()
+})
+
 test('assistant/message 事件回发渠道', async () => {
   const ctx = makeCtx()
   const gw = new ImGateway(ctx, { config: baseConfig, stateDir: '/tmp', log: () => {} })

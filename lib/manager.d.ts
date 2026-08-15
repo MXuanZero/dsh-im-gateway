@@ -29,6 +29,8 @@ export interface ChannelView {
     loginUrl?: string;
     /** 已配置的凭据键（脱敏，仅显示哪些已填）。 */
     configuredKeys: string[];
+    /** UI 批准的渠道白名单用户。 */
+    allowlist: string[];
 }
 export interface ManagerOptions {
     config: ImGatewayConfig;
@@ -41,15 +43,40 @@ export declare class ChannelManager {
     private readonly options;
     private readonly stateFile;
     private store;
+    /** 渠道级白名单（UI 批准的用户）：channelId → userId[]。 */
+    private allowlist;
+    /** 待授权请求：channelId → 请求列表。 */
+    private pending;
     /** 运行中的 adapter：id → { adapter }。 */
     private readonly running;
     constructor(ctx: Context, options: ManagerOptions);
     private load;
     private flush;
+    /** 该用户是否已获授权（UI allowlist 或 cordis 配置白名单）。 */
+    isAuthorized(channelId: string, userId: string): boolean;
+    /** 记录一个待授权请求（去重）。 */
+    requestAuthorization(channelId: string, userId: string, username?: string, chatId?: string): void;
+    /** 批准用户：加入渠道白名单并同步网关。 */
+    approve(channelId: string, userId: string): {
+        ok: boolean;
+        error?: string;
+    };
+    /** 拒绝用户：仅移除待授权请求。 */
+    deny(channelId: string, userId: string): void;
+    private removePending;
+    /** 全部待授权请求（跨渠道聚合，UI 横幅用）。 */
+    pendingRequests(): Array<{
+        channelId: string;
+        userId: string;
+        username?: string;
+        time: number;
+    }>;
     /** 合并配置：channels.json（UI）优先，cordis config 兜底。 */
     private mergedConfig;
-    /** 启动时初始化：合并配置中 enabled 或带凭据的渠道全部启动。 */
+    /** 启动时初始化：合并配置中 enabled 或带凭据的渠道全部启动；并把持久化白名单灌入网关。 */
     initAll(): Promise<void>;
+    /** 持久化白名单条目（重启恢复用）。 */
+    allowlistEntries(): Array<[string, string[]]>;
     /** 启用并启动一个渠道。extra 里的字段合并进配置并持久化。 */
     connect(id: string, extra?: Record<string, unknown>): Promise<{
         ok: boolean;
