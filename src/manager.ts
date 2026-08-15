@@ -160,7 +160,7 @@ export class ChannelManager {
     return { ...cordis, ...(this.store[id] ?? {}) }
   }
 
-  /** 启动时初始化：合并配置中 enabled 或带凭据的渠道全部启动；并把持久化白名单灌入网关。 */
+  /** 启动时初始化：合并配置中应启用的渠道全部启动；并把持久化白名单灌入网关。 */
   async initAll(): Promise<void> {
     // 重启后恢复 UI 批准的渠道白名单
     for (const [channelId, users] of Object.entries(this.allowlist)) {
@@ -168,7 +168,10 @@ export class ChannelManager {
     }
     for (const id of CHANNEL_IDS) {
       const cfg = this.mergedConfig(id)
-      const enabled = cfg.enabled === true || (this.store[id]?.enabled === true)
+      // 启用判定：cordis enabled=true，或 store 存在且未被显式禁用
+      // （断开只停运行态不写 enabled，因此"配置了 = 重启自动恢复"）
+      const stored = this.store[id]
+      const enabled = cfg.enabled === true || (stored !== undefined && stored.enabled !== false)
       if (enabled) {
         await this.connect(id).catch((err) => {
           this.options.log(`[manager] ${id} 启动失败: ${err instanceof Error ? err.message : String(err)}`)
@@ -213,7 +216,10 @@ export class ChannelManager {
     }
   }
 
-  /** 停用并停止一个渠道。 */
+  /**
+   * 停用并停止一个渠道（仅运行态，不持久化 enabled——重启后按配置自动恢复）。
+   * 彻底移除配置请用 {@link remove}。
+   */
   async disconnect(id: string): Promise<void> {
     const adapter = this.running.get(id)
     if (adapter) {
@@ -221,11 +227,21 @@ export class ChannelManager {
       this.running.delete(id)
       this.options.gateway.unregister(id)
     }
+    this.options.log(`[manager] ${id} 已断开（配置保留，重启自动恢复）`)
+  }
+
+  /** 彻底移除渠道：停止并删除持久化配置（重启后不再自动连接）。 */
+  async remove(id: string): Promise<void> {
+    await this.disconnect(id)
     if (this.store[id]) {
-      this.store[id] = { ...this.store[id], enabled: false }
+      delete this.store[id]
       this.flush()
     }
-    this.options.log(`[manager] ${id} 已断开`)
+    // 清空该渠道的授权与待授权
+    delete this.allowlist[id]
+    delete this.pending[id]
+    this.flush()
+    this.options.log(`[manager] ${id} 配置已删除`)
   }
 
   /** 刷新登录（重新启停，用于重新取二维码）。 */
@@ -304,6 +320,11 @@ export class ChannelManager {
           }
           if (action === 'disconnect') {
             await this.disconnect(id)
+            send(res, 200, { ok: true, channel: this.list().find((c) => c.id === id) })
+            return
+          }
+          if (action === 'remove') {
+            await this.remove(id)
             send(res, 200, { ok: true, channel: this.list().find((c) => c.id === id) })
             return
           }

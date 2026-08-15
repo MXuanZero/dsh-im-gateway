@@ -73,7 +73,7 @@ export declare class ChannelManager {
     }>;
     /** 合并配置：channels.json（UI）优先，cordis config 兜底。 */
     private mergedConfig;
-    /** 启动时初始化：合并配置中 enabled 或带凭据的渠道全部启动；并把持久化白名单灌入网关。 */
+    /** 启动时初始化：合并配置中应启用的渠道全部启动；并把持久化白名单灌入网关。 */
     initAll(): Promise<void>;
     /** 持久化白名单条目（重启恢复用）。 */
     allowlistEntries(): Array<[string, string[]]>;
@@ -82,8 +82,13 @@ export declare class ChannelManager {
         ok: boolean;
         error?: string;
     }>;
-    /** 停用并停止一个渠道。 */
+    /**
+     * 停用并停止一个渠道（仅运行态，不持久化 enabled——重启后按配置自动恢复）。
+     * 彻底移除配置请用 {@link remove}。
+     */
     disconnect(id: string): Promise<void>;
+    /** 彻底移除渠道：停止并删除持久化配置（重启后不再自动连接）。 */
+    remove(id: string): Promise<void>;
     /** 刷新登录（重新启停，用于重新取二维码）。 */
     refreshLogin(id: string): Promise<{
         ok: boolean;

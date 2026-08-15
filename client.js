@@ -104,14 +104,22 @@ window.__ModuleLoader__.load({
         ),
       );
 
-      // 已连接：断开按钮
+      // 已连接：断开/删除按钮
       if (ch.running) {
         children.push(
           h("div", { key: "hint", className: "imgw-hint" }, ch.status),
           h("div", { key: "actions", className: "imgw-card-row" },
             ch.loginUrl &&
               h("button", { key: "refresh", className: "imgw-btn ghost", disabled: isBusy, onClick: () => onAction(ch.id, "refresh") }, "刷新二维码"),
-            h("button", { key: "disconnect", className: "imgw-btn danger", disabled: isBusy, onClick: () => onAction(ch.id, "disconnect") }, "断开"),
+            h("button", { key: "disconnect", className: "imgw-btn ghost", disabled: isBusy, onClick: () => onAction(ch.id, "disconnect") }, "断开"),
+            h("button", {
+              key: "remove",
+              className: "imgw-btn danger",
+              disabled: isBusy,
+              onClick: () => {
+                if (confirm(`删除 ${ch.label} 的配置？重启后将不再自动连接。`)) onAction(ch.id, "remove");
+              },
+            }, "删除配置"),
           ),
         );
         if (ch.loginUrl) {
