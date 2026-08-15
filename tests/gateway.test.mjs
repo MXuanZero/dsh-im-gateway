@@ -138,6 +138,112 @@ test('assistant/message 事件回发渠道', async () => {
   gw.dispose()
 })
 
+test('媒体消息：图片走 attachments → image block 注入', async () => {
+  const ctx = makeCtx()
+  // mock attachments 服务
+  ctx.attachments = {
+    saveImage: async (input) => ({ attachmentId: 'att-1', mediaType: input.mediaType, bytes: input.data.length, width: 1, height: 1, name: input.name }),
+  }
+  const gw = new ImGateway(ctx, { config: baseConfig, stateDir: '/tmp', log: () => {} })
+  const { channel } = makeChannel()
+  gw.register(channel)
+
+  await channel.handler({
+    chatId: 'c1',
+    userId: 'u1',
+    text: '',
+    media: [{ kind: 'image', path: 'fake.jpg', mediaType: 'image/jpeg', name: 'a.jpg' }],
+  })
+  // 文件不存在 → readFile 失败，降级为路径说明
+  const keys = [...ctx._agents.keys()]
+  assert.equal(keys.length, 1)
+  const agent = ctx._agents.get(keys[0])
+  const blocks = agent.record.msg.content
+  assert.ok(blocks.some((b) => b.type === 'text' && b.text.includes('用户发来图片')), '应降级为文本说明')
+
+  gw.dispose()
+})
+
+test('媒体消息：图片字节直传（attachments 可用）', async () => {
+  const ctx = makeCtx()
+  const saved = []
+  ctx.attachments = {
+    saveImage: async (input) => {
+      saved.push(input)
+      return { attachmentId: 'att-1', mediaType: input.mediaType, bytes: input.data.length, width: 1, height: 1, name: input.name }
+    },
+  }
+  const gw = new ImGateway(ctx, { config: baseConfig, stateDir: '/tmp', log: () => {} })
+  const { channel } = makeChannel()
+  gw.register(channel)
+
+  const fakePng = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3])
+  await channel.handler({
+    chatId: 'c1',
+    userId: 'u1',
+    text: '看图',
+    media: [{ kind: 'image', data: fakePng, mediaType: 'image/png', name: 'p.png' }],
+  })
+  const keys = [...ctx._agents.keys()]
+  const agent = ctx._agents.get(keys[0])
+  const blocks = agent.record.msg.content
+  assert.ok(blocks.some((b) => b.type === 'image'), '应有 image block')
+  assert.equal(saved.length, 1)
+  assert.equal(saved[0].mediaType, 'image/png')
+
+  gw.dispose()
+})
+
+test('媒体消息：文件/视频 → 路径说明注入', async () => {
+  const ctx = makeCtx()
+  const gw = new ImGateway(ctx, { config: baseConfig, stateDir: '/tmp', log: () => {} })
+  const { channel } = makeChannel()
+  gw.register(channel)
+
+  await channel.handler({
+    chatId: 'c1',
+    userId: 'u1',
+    text: '',
+    media: [{ kind: 'file', path: '/tmp/report.pdf', name: 'report.pdf', mediaType: 'application/pdf' }],
+  })
+  const keys = [...ctx._agents.keys()]
+  const agent = ctx._agents.get(keys[0])
+  const blocks = agent.record.msg.content
+  assert.ok(blocks.some((b) => b.type === 'text' && b.text.includes('/tmp/report.pdf')), '应注明文件路径')
+
+  gw.dispose()
+})
+
+test('im_send_file 工具：把文件发给关联渠道', async () => {
+  const ctx = makeCtx()
+  const sentMedia = []
+  const { channel } = makeChannel()
+  channel.sendMedia = async (chatId, filePath, caption) => { sentMedia.push({ chatId, filePath, caption }) }
+  const gw = new ImGateway(ctx, { config: baseConfig, stateDir: '/tmp', log: () => {} })
+  gw.register(channel)
+
+  // 建立会话
+  await channel.handler({ chatId: 'c1', userId: 'u1', text: 'hello!!' })
+  const sessionId = [...ctx._agents.keys()][0]
+
+  const result = await gw.sendFileToChats('/tmp/a.png', '截图', undefined, sessionId)
+  assert.equal(result.ok, true)
+  assert.equal(sentMedia.length, 1)
+  assert.equal(sentMedia[0].chatId, 'c1')
+  assert.equal(sentMedia[0].filePath, '/tmp/a.png')
+  assert.equal(sentMedia[0].caption, '截图')
+
+  gw.dispose()
+})
+
+test('im_send_file 工具：无关联会话时报错', async () => {
+  const ctx = makeCtx()
+  const gw = new ImGateway(ctx, { config: baseConfig, stateDir: '/tmp', log: () => {} })
+  const result = await gw.sendFileToChats('/tmp/a.png', undefined, undefined, 'no-such-session')
+  assert.equal(result.ok, false)
+  gw.dispose()
+})
+
 test('approval/request 推送到渠道并远程批准', async () => {
   const ctx = makeCtx()
   const gw = new ImGateway(ctx, { config: baseConfig, stateDir: '/tmp', log: () => {} })

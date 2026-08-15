@@ -32,8 +32,9 @@ import { join } from 'node:path'
 import { mkdirSync, writeFileSync } from 'node:fs'
 
 export const name = 'dsh-im-gateway'
-// agents：创建/查找 agent 会话；jobs：后台任务（扫码/轮询状态对 Web UI 可见）
-export const inject = ['agents', 'jobs']
+// agents：创建/查找 agent 会话；jobs：后台任务（扫码/轮询状态对 Web UI 可见）；
+// tools：注册 im_send_file（agent → IM 发文件）；attachments：图片入站转 image block
+export const inject = ['agents', 'jobs', 'tools', 'attachments']
 
 /** 网关部署配置。 */
 export const Config: Schema<ImGatewayConfig> = Schema.object({

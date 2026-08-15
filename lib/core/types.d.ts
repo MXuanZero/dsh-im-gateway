@@ -5,6 +5,19 @@
  * 由 {@link ImGateway} 统一负责：会话路由、白名单、命令、审批桥、分片投递。
  * @module dsh-im-gateway/core/types
  */
+/** 媒体附件：渠道层负责下载/解密/转码，网关负责桥接给 agent。 */
+export interface ImMedia {
+    /** 图片（解码字节或已落盘路径）｜语音转文字｜文件｜视频。 */
+    kind: 'image' | 'voice-text' | 'file' | 'video';
+    /** 图片：解码后的字节（网关走 ctx.attachments.saveImage → image block）。 */
+    data?: Uint8Array;
+    mediaType?: string;
+    name?: string;
+    /** 语音转文字内容（服务端提供时优先于文件）。 */
+    text?: string;
+    /** 文件/视频/已落盘的图片：本地路径。 */
+    path?: string;
+}
 /** 统一入站消息：渠道层把各自的消息归一成这个形状交给网关。 */
 export interface ImMessage {
     /** 渠道内唯一的会话标识（私聊 id / 群 id / 话题 id，字符串化）。 */
@@ -13,10 +26,12 @@ export interface ImMessage {
     userId?: string;
     /** 发送者显示名（可选，用于日志）。 */
     username?: string;
-    /** 消息文本（文本类消息；图片/文件等媒体 v0.1 暂不桥接）。 */
+    /** 消息文本（文本类消息；纯媒体消息可为空）。 */
     text: string;
     /** 渠道特定上下文，回复时原样回传（如 iLink context_token）。 */
     context?: Record<string, unknown>;
+    /** 媒体附件（图片/语音转文字/文件/视频）。 */
+    media?: ImMedia[];
 }
 /** 渠道发送选项。 */
 export interface SendOptions {
@@ -39,6 +54,8 @@ export interface ChannelAdapter {
     send(chatId: string, text: string, options?: SendOptions): Promise<void>;
     /** 打字指示（可选）。 */
     sendAction?(chatId: string, action: 'typing'): Promise<void>;
+    /** 发送媒体文件（图片/视频/文档），caption 可选；渠道不支持时抛错。 */
+    sendMedia?(chatId: string, filePath: string, caption?: string): Promise<void>;
     /** 注册入站消息处理器（网关在 start 前调用一次）。 */
     setMessageHandler(handler: (msg: ImMessage) => void | Promise<void>): void;
     /** 当前状态摘要（用于 `/status` 命令），如登录态/扫码链接。 */

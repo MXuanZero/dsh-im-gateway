@@ -27,15 +27,27 @@ export declare class ImGateway {
     private readonly merger;
     private readonly mergeBuffers;
     private readonly disposeEvents;
+    private readonly disposeTools;
     constructor(ctx: Context, options: GatewayOptions);
     register(channel: ChannelAdapter): void;
     unregister(channelId: string): void;
     channel(channelId: string): ChannelAdapter | undefined;
     listChannels(): ChannelAdapter[];
     private handleInbound;
+    /** 把媒体消息组装成 content blocks（图片走 attachments → image block；文件/视频注明路径）。 */
+    private buildMediaBlocks;
     /** 把文本注入目标 chat 的 agent 会话，返回给用户的可选回执。 */
     private injectText;
-    private userMessage;
+    /** 把 content blocks 注入目标 chat 的 agent 会话，返回给用户的可选回执。 */
+    private injectBlocks;
+    private ackFor;
+    /** 注册 im_send_file 工具：agent 把工作区文件发给当前 IM 聊天。 */
+    private registerSendMediaTool;
+    /** 把文件发送到会话关联的所有渠道（im_send_file 工具的执行体，可测试）。 */
+    sendFileToChats(filePath: string, caption?: string, channelFilter?: string, sessionId?: string): Promise<{
+        ok: boolean;
+        detail: string;
+    }>;
     private authorized;
     private handleCommand;
     private handleApprovalRequest;

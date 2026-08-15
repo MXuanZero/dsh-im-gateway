@@ -25,6 +25,7 @@
 - ✂️ **长回复智能分片** — 按各渠道上限切分，优先在换行/句号断行，带 `（i/n）` 序号且收敛
 - 🛡️ **白名单安全默认** — 默认拒绝一切未知用户；审批应答强制校验会话归属
 - 🔑 **扫码登录** — 微信 / WhatsApp 扫码登录链接自动落盘，`/channels` 随时查看状态
+- 🖼️ **媒体收发** — 微信渠道完整支持图片/语音（服务端转文字）/文件/视频（CDN AES-128-ECB 加密），agent 可用 `im_send_file` 工具把工作区文件发给聊天
 - 📦 **一条命令安装** — 标准 `dsh.bundle` 插件，`dsh plugin add` 即装即用
 
 ## 🏗 Architecture
@@ -60,7 +61,7 @@ agent 回复 ← 网关(按渠道分片) ← session/event(assistant/message) �
 | **Discord** | ✅ 完整 | Gateway WebSocket | Bot token |
 | **Slack** | ✅ 完整 | Socket Mode | xoxb- + xapp- token |
 | **飞书 / Lark** | ✅ 完整 | 官方 SDK 长连接 | App ID + Secret |
-| **微信** | ✅ 完整 | iLink 扫码登录 | 专用小号 ⚠️ |
+| **微信** | ✅ 完整* | iLink 扫码登录（官方协议） | 专用小号 ⚠️ |
 | **QQ 机器人** | ✅ 完整 | 官方 WebSocket | AppID + Secret |
 | **LINE** | ✅ 完整 | REST + webhook | Channel token |
 | **Matrix** | ✅ 完整 | 客户端同步 | Homeserver + token |
@@ -78,7 +79,7 @@ agent 回复 ← 网关(按渠道分片) ← session/event(assistant/message) �
 | **Google Chat** | 🧪 实验性 | webhook | 公网地址 |
 | **Tlon / 元宝 / 语音** | 🧪 骨架 | — | 基础设施 |
 
-✅ 完整 = 收发可用 ｜ 🔄 动态依赖 = 未装 SDK 时提示安装 ｜ 🧪 实验性 = 需公网/专用基础设施
+✅ 完整 = 收发可用 ｜ 🔄 动态依赖 = 未装 SDK 时提示安装 ｜ 🧪 实验性 = 需公网/专用基础设施 ｜ \*微信 = 官方 iLink 协议（媒体收发 + 语音转文字 + typing）
 
 ## 🚀 Quick Start
 
@@ -192,7 +193,7 @@ dsh web
 
 ## 🔐 Security
 
-- **微信为非官方 iLink 通道**（与 OpenClaw 微信插件同机制）：仅私聊、一个账号一个 poller，建议使用**专用小号**，账号存在被限制的风险
+- **微信为腾讯官方 iLink Bot 协议**（与 OpenClaw 官方插件 `@tencent-weixin/openclaw-weixin` 同协议，2026 年官方开放）：仅私聊、一个账号一个 poller，建议使用**专用小号**；使用即表示同意《微信ClawBot功能使用条款》
 - **白名单默认拒绝一切未知用户**；审批应答强制校验会话归属（pending approval id 一一对应）
 - 实验性/骨架渠道（Teams、Google Chat、Tlon、元宝、语音）启用前请阅读源码
 - 第三方插件即第三方代码——安装前请审阅源码，建议先在隔离环境试用
