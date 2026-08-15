@@ -9,10 +9,50 @@
   <img alt="Channels" src="https://img.shields.io/badge/channels-24%2B-238636">
   <img alt="DSH bundle" src="https://img.shields.io/badge/dsh-bundle%20plugin-4d6bfe">
   <img alt="PRs Welcome" src="https://img.shields.io/badge/PRs-welcome-brightgreen">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-31%20passed-238636">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-47%20passed-238636">
 </p>
 
 <p align="center"><b>English</b> · <a href="#中文">中文</a></p>
+
+---
+
+## ⚡ 一键安装：把提示词发给你的 dsh 即可
+
+> 任选一种方式，把下面整段提示词发给你的 dsh（Web GUI 聊天框 / `dsh --profile headless "…"` / 已接入的 IM 聊天），agent 会**自动完成下载、构建、安装**——不用手动敲命令。
+
+<details open>
+<summary><b>方式 A · GitHub 克隆安装（最稳妥，推荐）</b></summary>
+
+```text
+请帮我安装 dsh-im-gateway 插件（DeepSeek Harness 的聚合 IM 网关）：
+1. 执行 git clone --depth 1 https://github.com/zhuiyueya/dsh-im-gateway.git /tmp/dsh-im-gateway
+2. 执行 cd /tmp/dsh-im-gateway && npm install && npm run build
+3. 执行 dsh plugin --profile web add /tmp/dsh-im-gateway
+4. 汇报结果；如果提示需要重启，提醒我重启 dsh web。
+```
+</details>
+
+<details>
+<summary><b>方式 B · 远程仓库直装（无需 clone，已实测可用）</b></summary>
+
+```text
+请安装 dsh-im-gateway 插件：dsh plugin --profile web add https://github.com/zhuiyueya/dsh-im-gateway.git
+装完提醒我重启 dsh web（首次安装依赖约 1-2 分钟）。
+```
+</details>
+
+<details>
+<summary><b>方式 C · 本机已有项目目录</b></summary>
+
+```text
+请把本机项目 dsh-im-gateway 安装为 dsh 插件：
+1. 进入项目目录执行 npm install && npm run build
+2. 执行 dsh plugin --profile web add <项目绝对路径>
+3. 提醒我重启 dsh web。
+```
+</details>
+
+装好后：**打开 dsh Web GUI → 设置 ⚙️ → 🐋 IM 网关 → 点选渠道连接**（微信/WhatsApp 扫码即连，其余填凭据即可）。
 
 ---
 
@@ -102,7 +142,9 @@ dsh web    # 重启 dsh（安装插件后需要重启一次）
 - **飞书 / Telegram / QQ 机器人 / Discord / Slack …**：点「填写凭据」→ 按提示粘贴 token → 「保存并连接」✅
 - **WebChat 网页**：点「一键开启」→ 浏览器打开给出的地址，直接和 agent 对话 ✅
 
-连接后无需重启，状态实时显示（等待扫码 / 已连接 / 异常）。
+连接后无需重启，状态实时显示（等待扫码 / 已连接 / 异常）。**重启 dsh 后所有已配置渠道自动重连**（微信登录态已持久化，无需重复扫码）。
+
+> 🔧 **断开 vs 删除配置**：已连接渠道卡片上有两个按钮——「断开」只是临时停用（重启自动恢复）；「删除配置」会移除凭据（重启不再连接，需重新配置）。
 
 > 💡 手动配置方式（可选）：在 `~/.dsh/profiles/web/cordis.patch.yml` 写配置，凭据也可用环境变量，见下文「Configuration」。
 
