@@ -145,8 +145,8 @@ agent 回复实时回推；需要批准时在聊天里回「批准 / 拒绝」�
     cwd: /path/to/workspace        # agent 工作目录
     provider: deepseek-official    # LLM provider（默认跟随 dsh）
     model: deepseek-v4-flash       # 模型（默认跟随 dsh）
-    allowAllUsers: false           # 放行所有用户（仅开发）
-    allowedUserIds:                # 白名单：按渠道
+    allowAllUsers: true            # 默认放行所有用户（开箱即用）；管控时改 false
+    allowedUserIds:                # 白名单：按渠道（allowAllUsers=false 时生效）
       telegram: ['123456789']
       '*': ['u-common']            # 跨渠道通用
     mergeTimeoutSecs: 5            # 手机多段输入合并窗口
