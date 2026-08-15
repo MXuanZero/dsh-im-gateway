@@ -26,7 +26,8 @@
 - 🛡️ **白名单安全默认** — 默认拒绝一切未知用户；审批应答强制校验会话归属
 - 🔑 **扫码登录** — 微信 / WhatsApp 扫码登录链接自动落盘，`/channels` 随时查看状态
 - 🖼️ **媒体收发** — 微信渠道完整支持图片/语音（服务端转文字）/文件/视频（CDN AES-128-ECB 加密），agent 可用 `im_send_file` 工具把工作区文件发给聊天
-- 📦 **一条命令安装** — 标准 `dsh.bundle` 插件，`dsh plugin add` 即装即用
+- 📦 **一条命令安装 + 可视化连接** — 标准 `dsh.bundle` 插件；Web GUI 设置面板点选渠道、扫码/填凭据即连，无需重启
+- 🎯 **小白友好** — 微信/WhatsApp 点一下直接弹二维码；其余渠道表单引导，状态实时显示
 
 ## 🏗 Architecture
 
@@ -83,53 +84,38 @@ agent 回复 ← 网关(按渠道分片) ← session/event(assistant/message) �
 
 ## 🚀 Quick Start
 
-### 1. 安装
+### 1. 安装（一次）
 
 ```bash
 cd dsh-im-gateway
 npm install && npm run build
 
 dsh plugin --profile web add /path/to/dsh-im-gateway
+dsh web    # 重启 dsh（安装插件后需要重启一次）
 ```
 
-### 2. 启用一个渠道（60 秒跑通内置 WebChat）
+### 2. 连接渠道（之后所有操作都在网页里，无需再碰配置）
 
-在 `~/.dsh/profiles/web/cordis.patch.yml` 追加：
+打开 dsh Web GUI（默认 http://localhost:3080）→ **设置 ⚙️ → 「🐋 IM 网关」**：
 
-```yaml
-- id: im-gateway
-  config:
-    channels:
-      webchat:
-        enabled: true
-        port: 8787
-    allowAllUsers: true   # 仅本机开发；生产请配置白名单
+- **微信 / WhatsApp**：点「连接（扫码）」→ 页面直接弹出**二维码**，手机扫码确认即连 ✅
+- **飞书 / Telegram / QQ 机器人 / Discord / Slack …**：点「填写凭据」→ 按提示粘贴 token → 「保存并连接」✅
+- **WebChat 网页**：点「一键开启」→ 浏览器打开给出的地址，直接和 agent 对话 ✅
+
+连接后无需重启，状态实时显示（等待扫码 / 已连接 / 异常）。
+
+> 💡 手动配置方式（可选）：在 `~/.dsh/profiles/web/cordis.patch.yml` 写配置，凭据也可用环境变量，见下文「Configuration」。
+
+### 3. 开始使用
+
+在连接好的聊天软件里给机器人发消息：
+
+```
+/help        ← 可用命令
+你好，帮我看看当前工作区    ← 直接聊天 = 驱动 agent
 ```
 
-### 3. 重启并在浏览器打开
-
-```bash
-dsh web
-# 浏览器打开 http://localhost:8787 —— 网页聊天室直接和 dsh agent 对话
-```
-
-### 4. 接入真实 IM（以 Telegram 为例）
-
-```yaml
-- id: im-gateway
-  config:
-    channels:
-      telegram:
-        token: '123456:ABC-DEF...'   # 或环境变量 DSH_TELEGRAM_TOKEN
-      feishu:
-        appId: 'cli_xxx'
-        appSecret: 'xxx'
-    allowedUserIds:                  # 白名单（默认拒绝一切未知用户）
-      telegram: ['123456789']
-    sessionMode: per-chat
-```
-
-> 💡 微信需要先扫码：启动后查看 `~/.dsh/dsh-im-gateway/gateway.log` 或 Web UI 后台任务面板中的登录链接。
+agent 回复实时回推；需要批准时在聊天里回「批准 / 拒绝」；agent 还可以用 `im_send_file` 把文件（截图/报告）直接发到聊天。
 
 ## 💬 IM Commands
 

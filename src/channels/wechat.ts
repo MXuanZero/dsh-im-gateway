@@ -140,6 +140,8 @@ export function createWechatChannel(config: WechatChannelConfig, log: (line: str
   let stopped = false
   let botToken = ''
   let statusText = '未登录'
+  /** 当前登录二维码 URL（UI 轮询用）。 */
+  let currentLoginUrl: string | undefined
 
   const uin = Buffer.from(String(Math.floor(Math.random() * 0xffffffff)), 'utf8').toString('base64')
   /** typing_ticket 按用户缓存。 */
@@ -213,6 +215,7 @@ export function createWechatChannel(config: WechatChannelConfig, log: (line: str
         continue
       }
       statusText = '等待扫码'
+      currentLoginUrl = qrUrl
       log(`[wechat] 请用微信扫码登录: ${qrUrl}`)
       try {
         mkdirSync(dir, { recursive: true })
@@ -242,6 +245,7 @@ export function createWechatChannel(config: WechatChannelConfig, log: (line: str
             return false
           }
           statusText = '已登录'
+          currentLoginUrl = undefined
           log('[wechat] 登录完成')
           return true
         }
@@ -595,6 +599,9 @@ export function createWechatChannel(config: WechatChannelConfig, log: (line: str
     },
     async sendMedia(chatId, filePath, caption) {
       await sendMediaFile(chatId, filePath, caption)
+    },
+    loginUrl() {
+      return currentLoginUrl
     },
     setMessageHandler(h) {
       handler = h

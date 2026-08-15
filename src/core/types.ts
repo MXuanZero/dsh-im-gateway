@@ -60,6 +60,8 @@ export interface ChannelAdapter {
   sendAction?(chatId: string, action: 'typing'): Promise<void>
   /** 发送媒体文件（图片/视频/文档），caption 可选；渠道不支持时抛错。 */
   sendMedia?(chatId: string, filePath: string, caption?: string): Promise<void>
+  /** 登录二维码 URL（扫码类渠道；未在扫码/无二维码时返回 undefined）。 */
+  loginUrl?(): string | undefined
   /** 注册入站消息处理器（网关在 start 前调用一次）。 */
   setMessageHandler(handler: (msg: ImMessage) => void | Promise<void>): void
   /** 当前状态摘要（用于 `/status` 命令），如登录态/扫码链接。 */

@@ -5,10 +5,11 @@
  * QQ / WhatsApp / Signal / Teams / LINE / Matrix / Mattermost / Google Chat /
  * IRC / Twitch / Nostr / Nextcloud Talk / Synology Chat / Zalo / iMessage /
  * WebChat …），统一提供：每聊天一个 agent 会话、/new /status /bind 等命令、
- * 审批远程应答（批准/拒绝）、手机多段输入合并、长回复分片、白名单。
+ * 审批远程应答（批准/拒绝）、手机多段输入合并、长回复分片、白名单、媒体收发。
  *
- * 配置：在 profile 的 cordis.patch.yml 中给 im-gateway 行写 config，
- * 或通过环境变量提供凭据（见 README）。未配置凭据的渠道不启动。
+ * 两种配置方式：
+ * 1. Web GUI 设置面板「IM 网关」：点选渠道 → 扫码/填凭据 → 立即连接（无需重启）
+ * 2. profile 的 cordis.patch.yml 写 im-gateway 行 config（或环境变量）
  *
  * @module dsh-im-gateway
  */
@@ -17,6 +18,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
 // dsh-jobs 的模块增强（ctx.jobs 服务 + 自定义 job kind）
 import type {} from '@deepseek-ai/dsh-jobs'
+// dsh-host-webserver 的模块增强（ctx.webServer）
+import type {} from '@deepseek-ai/dsh-host-webserver'
 
 declare module '@deepseek-ai/dsh-jobs' {
   interface JobKindMap {
@@ -25,16 +28,16 @@ declare module '@deepseek-ai/dsh-jobs' {
 }
 import { ImGateway } from './core/gateway.js'
 import type { ImGatewayConfig } from './core/types.js'
-import { createChannels } from './channels/index.js'
-import type { ChannelAdapter } from './core/types.js'
+import { ChannelManager } from './manager.js'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { mkdirSync, writeFileSync } from 'node:fs'
 
 export const name = 'dsh-im-gateway'
 // agents：创建/查找 agent 会话；jobs：后台任务（扫码/轮询状态对 Web UI 可见）；
-// tools：注册 im_send_file（agent → IM 发文件）；attachments：图片入站转 image block
-export const inject = ['agents', 'jobs', 'tools', 'attachments']
+// tools：注册 im_send_file（agent → IM 发文件）；attachments：图片入站转 image block；
+// webServer：提供设置面板调用的 HTTP API
+export const inject = ['agents', 'jobs', 'tools', 'attachments', 'webServer']
 
 /** 网关部署配置。 */
 export const Config: Schema<ImGatewayConfig> = Schema.object({
@@ -55,7 +58,7 @@ export const Config: Schema<ImGatewayConfig> = Schema.object({
 
 /**
  * 启动聚合网关。
- * @param ctx - Cordis 上下文；`agents`/`jobs` 由声明注入。
+ * @param ctx - Cordis 上下文；声明注入的服务。
  * @param config - 部署配置。
  */
 export function apply(ctx: Context, config: ImGatewayConfig): void {
@@ -79,28 +82,17 @@ export function apply(ctx: Context, config: ImGatewayConfig): void {
   }
 
   const gateway = new ImGateway(ctx, { config, stateDir, log })
-  const channels: ChannelAdapter[] = createChannels(config, log, stateDir)
-
-  for (const channel of channels) {
-    gateway.register(channel)
-    log(`[${channel.id}] 渠道已注册（${channel.label}）`)
-  }
-
-  const started = new Set<string>()
-  const startChannel = (channel: ChannelAdapter) => {
-    if (started.has(channel.id)) return
-    started.add(channel.id)
-    void Promise.resolve(channel.start()).catch((err) => {
-      log(`[${channel.id}] 启动失败: ${err instanceof Error ? err.message : String(err)}`)
-    })
-  }
+  const manager = new ChannelManager(ctx, { config, stateDir, log, gateway })
 
   ctx.effect(() => {
-    for (const channel of channels) startChannel(channel)
+    // 启动已启用渠道（channels.json / cordis 配置）
+    void manager.initAll().then(() => {
+      const running = manager.list().filter((c) => c.running)
+      log(`网关启动完成：${running.length} 个渠道运行中（${running.map((c) => c.id).join(', ') || '无'}）`)
+    })
+    manager.registerApi()
     return () => {
-      for (const channel of channels) {
-        void Promise.resolve(channel.stop()).catch(() => undefined)
-      }
+      void manager.disconnectAll()
       gateway.dispose()
       void gateway.stopAgents()
     }
@@ -110,7 +102,7 @@ export function apply(ctx: Context, config: ImGatewayConfig): void {
   ctx.jobs.attachController(name)
   ctx.jobs.start({
     kind: 'im-gateway',
-    label: `IM 网关（${channels.length} 个渠道: ${channels.map((c) => c.id).join(', ') || '无'}）`,
+    label: 'IM 网关（设置面板可快速连接渠道）',
     run: () => {
       const timer = setInterval(() => {
         // 保持任务活跃；状态通过 readOutput 暴露
@@ -123,12 +115,9 @@ export function apply(ctx: Context, config: ImGatewayConfig): void {
       }
     },
   })
-
-  if (channels.length === 0) {
-    log('⚠️ 没有启用任何渠道：请在配置中填写渠道凭据，或用环境变量（见 README）')
-  }
 }
 
 export * from './core/types.js'
 export * from './core/gateway.js'
 export * from './channels/index.js'
+export * from './manager.js'
