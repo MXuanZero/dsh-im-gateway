@@ -42,6 +42,12 @@ const UPLOAD_FILE = 3
 interface WechatState {
   allowedUserId?: string
   contextTokens: Record<string, string>
+  /** 登录 bot_token（持久化后重启免扫码）。 */
+  botToken?: string
+  /** 服务端下发的 base URL（可能变化）。 */
+  baseUrl?: string
+  /** 轮询游标（重启恢复避免消息重复/丢失）。 */
+  syncBuf?: string
 }
 
 type Json = Record<string, unknown>
@@ -151,7 +157,13 @@ export function createWechatChannel(config: WechatChannelConfig, log: (line: str
     try {
       const raw = readFileSync(statePath, 'utf8')
       const parsed = JSON.parse(raw) as Partial<WechatState>
-      return { allowedUserId: parsed.allowedUserId, contextTokens: parsed.contextTokens ?? {} }
+      return {
+        allowedUserId: parsed.allowedUserId,
+        contextTokens: parsed.contextTokens ?? {},
+        botToken: parsed.botToken,
+        baseUrl: parsed.baseUrl,
+        syncBuf: parsed.syncBuf,
+      }
     } catch {
       return { contextTokens: {} }
     }
@@ -180,7 +192,8 @@ export function createWechatChannel(config: WechatChannelConfig, log: (line: str
   }
 
   async function request(path: string, body: unknown, timeoutMs: number, tolerateRet1 = false): Promise<Json> {
-    const res = await fetch(`${BASE_URL}${path}`, {
+    const baseUrl = state.baseUrl && state.baseUrl.trim() !== '' ? state.baseUrl : BASE_URL
+    const res = await fetch(`${baseUrl}${path}`, {
       method: 'POST',
       headers: headers(),
       body: JSON.stringify(body),
@@ -236,17 +249,21 @@ export function createWechatChannel(config: WechatChannelConfig, log: (line: str
           const userId = pickStr(st, 'ilink_user_id')
           if (!token || !userId) throw new Error('wechat confirmed 但缺少 token/user')
           botToken = token
+          // 持久化登录态：重启后免扫码
+          state.botToken = token
+          const newBaseUrl = pickStr(st, 'baseurl', 'base_url')
+          if (newBaseUrl) state.baseUrl = newBaseUrl
           if (!state.allowedUserId) {
             state.allowedUserId = userId
-            flush()
             log(`[wechat] 已绑定白名单用户 ${userId}（仅该用户可驱动）`)
           } else if (state.allowedUserId !== userId) {
             log(`[wechat] 扫码用户 ${userId} 不在白名单（白名单=${state.allowedUserId}）`)
             return false
           }
+          flush()
           statusText = '已登录'
           currentLoginUrl = undefined
-          log('[wechat] 登录完成')
+          log('[wechat] 登录完成（登录态已保存，重启无需重复扫码）')
           return true
         }
         if (status === 'expired') {
@@ -393,8 +410,16 @@ export function createWechatChannel(config: WechatChannelConfig, log: (line: str
   }
 
   async function pollLoop(): Promise<void> {
-    if (!(await loginLoop())) return
-    let cursor = ''
+    // 已有保存的登录态 → 跳过扫码直接轮询（重启免扫码）
+    if (state.botToken) {
+      botToken = state.botToken
+      statusText = '已登录（自动恢复）'
+      log('[wechat] 检测到已保存的登录态，跳过扫码直接轮询')
+    } else if (!(await loginLoop())) {
+      return
+    }
+    let cursor = state.syncBuf ?? ''
+    let staleCount = 0
     while (!stopped) {
       let data: Json
       try {
@@ -405,29 +430,54 @@ export function createWechatChannel(config: WechatChannelConfig, log: (line: str
         )
       } catch (err) {
         if (stopped) return
-        log(`[wechat] 长轮询失败，5s 后重试: ${err instanceof Error ? err.message : String(err)}`)
+        const msg = err instanceof Error ? err.message : String(err)
+        // token 失效（服务端 errcode -14，与官方插件 STALE_TOKEN_ERRCODE 一致）
+        if (msg.includes('ret=-14') || msg.includes('errcode=-14') || msg.includes('-14')) {
+          staleCount += 1
+          if (staleCount >= 3) {
+            log('[wechat] 登录态已失效（连续 3 次），清除登录信息，需要重新扫码')
+            state.botToken = undefined
+            state.syncBuf = undefined
+            flush()
+            if (!(await loginLoop())) return
+            staleCount = 0
+            cursor = state.syncBuf ?? ''
+            continue
+          }
+          log(`[wechat] 登录态失效（${staleCount}/3），5 分钟后重试（若持续失效请重新扫码）`)
+          await sleep(300_000)
+          continue
+        }
+        staleCount = 0
+        log(`[wechat] 长轮询失败，5s 后重试: ${msg}`)
         await sleep(5000)
         continue
       }
-      cursor = pickStr(data, 'get_updates_buf', 'cursor', 'sync_buf') ?? cursor
+      staleCount = 0
+      const nextCursor = pickStr(data, 'get_updates_buf', 'cursor', 'sync_buf') ?? cursor
+      if (nextCursor !== cursor) {
+        cursor = nextCursor
+        state.syncBuf = cursor
+      }
       const rawList = data.msgs ?? data.messages ?? data.updates
-      if (!Array.isArray(rawList)) continue
-      for (const raw of rawList) {
-        try {
-          const parsed = parseInbound(raw)
-          if (!parsed) continue
-          if (parsed.contextToken) state.contextTokens[parsed.fromUserId] = parsed.contextToken
-          if (state.allowedUserId && parsed.fromUserId !== state.allowedUserId) continue
-          const media = await Promise.all(parsed.media)
-          if (parsed.text === '' && media.length === 0) continue
-          void handler?.({
-            chatId: parsed.fromUserId,
-            userId: parsed.fromUserId,
-            text: parsed.text,
-            media,
-            context: { contextToken: parsed.contextToken },
-          })
-        } catch { /* 单条失败跳过 */ }
+      if (Array.isArray(rawList)) {
+        for (const raw of rawList) {
+          try {
+            const parsed = parseInbound(raw)
+            if (!parsed) continue
+            if (parsed.contextToken) state.contextTokens[parsed.fromUserId] = parsed.contextToken
+            if (state.allowedUserId && parsed.fromUserId !== state.allowedUserId) continue
+            const media = await Promise.all(parsed.media)
+            if (parsed.text === '' && media.length === 0) continue
+            void handler?.({
+              chatId: parsed.fromUserId,
+              userId: parsed.fromUserId,
+              text: parsed.text,
+              media,
+              context: { contextToken: parsed.contextToken },
+            })
+          } catch { /* 单条失败跳过 */ }
+        }
       }
       flush()
     }
