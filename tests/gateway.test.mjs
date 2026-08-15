@@ -118,6 +118,32 @@ test('白名单拦截非授权用户', async () => {
   gw.dispose()
 })
 
+test('渠道本地授权（微信扫码用户）优先于全局白名单', async () => {
+  const ctx = makeCtx()
+  // 全局白名单为空 + allowAllUsers=false（模拟用户没配全局白名单）
+  const cfg = { ...baseConfig, allowAllUsers: false, allowedUserIds: {} }
+  const gw = new ImGateway(ctx, { config: cfg, stateDir: '/tmp', log: () => {} })
+  const { channel, sent } = makeChannel()
+  // 微信语义：扫码用户 u1 被渠道授权，u2 被渠道拒绝
+  channel.authorizes = (userId) => (userId === 'u1' ? true : userId === 'u2' ? false : undefined)
+  gw.register(channel)
+
+  // u1（渠道授权）→ 放行
+  await channel.handler({ chatId: 'c1', userId: 'u1', text: '你好!!' })
+  assert.equal(ctx._agents.size, 1, '渠道授权用户应放行')
+
+  // u2（渠道拒绝）→ 拦截
+  await channel.handler({ chatId: 'c2', userId: 'u2', text: '你好!!' })
+  assert.equal(ctx._agents.size, 1, '渠道拒绝用户应拦截')
+  assert.ok(sent.some((s) => s.text.includes('未授权')))
+
+  // u3（渠道未表态）→ 走全局白名单 → 拦截
+  await channel.handler({ chatId: 'c3', userId: 'u3', text: '你好!!' })
+  assert.equal(ctx._agents.size, 1, '未授权用户应拦截')
+
+  gw.dispose()
+})
+
 test('assistant/message 事件回发渠道', async () => {
   const ctx = makeCtx()
   const gw = new ImGateway(ctx, { config: baseConfig, stateDir: '/tmp', log: () => {} })

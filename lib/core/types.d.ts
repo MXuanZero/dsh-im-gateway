@@ -58,6 +58,11 @@ export interface ChannelAdapter {
     sendMedia?(chatId: string, filePath: string, caption?: string): Promise<void>;
     /** 登录二维码 URL（扫码类渠道；未在扫码/无二维码时返回 undefined）。 */
     loginUrl?(): string | undefined;
+    /**
+     * 渠道本地授权判定（如微信扫码用户自动授权）：
+     * true=该用户已被渠道内部授权（放行）；false=渠道明确拒绝；undefined=由网关全局白名单决定。
+     */
+    authorizes?(userId: string): boolean | undefined;
     /** 注册入站消息处理器（网关在 start 前调用一次）。 */
     setMessageHandler(handler: (msg: ImMessage) => void | Promise<void>): void;
     /** 当前状态摘要（用于 `/status` 命令），如登录态/扫码链接。 */
