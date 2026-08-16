@@ -32,6 +32,7 @@ import { ChannelManager } from './manager.js'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { acquireDshHomeInstanceLock } from './instance-lock.js'
 
 export const name = 'dsh-im-gateway'
 // agents：创建/查找 agent 会话；jobs：后台任务（扫码/轮询状态对 Web UI 可见）；
@@ -64,9 +65,17 @@ export const Config: Schema<ImGatewayConfig> = Schema.object({
  * @param config - 部署配置。
  */
 export function apply(ctx: Context, config: ImGatewayConfig): void {
+  const dshHome = process.env.DSH_HOME ?? join(homedir(), '.dsh')
+  const instanceLock = acquireDshHomeInstanceLock(dshHome)
+  try {
+    ctx.effect(() => () => instanceLock.release(), 'im-gateway.instance-lock')
+  } catch (error) {
+    instanceLock.release()
+    throw error
+  }
   const stateDir = config.stateDir !== ''
     ? config.stateDir
-    : join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'dsh-im-gateway')
+    : join(dshHome, 'dsh-im-gateway')
   mkdirSync(stateDir, { recursive: true })
 
   // 环形日志缓冲：Web UI 的 jobs readOutput 可读（扫码链接等），同时落盘便于排查

@@ -225,6 +225,7 @@ agent 回复实时回推；需要批准时在聊天里回「批准 / 拒绝」�
 
 - **微信为腾讯官方 iLink Bot 协议**（与 OpenClaw 官方插件 `@tencent-weixin/openclaw-weixin` 同协议，2026 年官方开放）：仅私聊、一个账号一个 poller，建议使用**专用小号**；使用即表示同意《微信ClawBot功能使用条款》
 - **白名单默认拒绝一切未知用户**；审批应答强制校验会话归属（pending approval id 一一对应）
+- **不要让多个 DSH 进程共享同一个 `DSH_HOME`**：并发恢复同一会话会写出重复 `seq` 并损坏历史。网关会拒绝第二个实例；测试实例请使用独立目录，例如 `DSH_HOME=/tmp/dsh-test-8788 dsh web`。
 - 实验性/骨架渠道（Teams、Google Chat、Tlon、元宝、语音）启用前请阅读源码
 - 第三方插件即第三方代码——安装前请审阅源码，建议先在隔离环境试用
 
