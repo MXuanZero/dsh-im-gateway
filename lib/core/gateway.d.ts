@@ -27,6 +27,11 @@ export interface GatewayOptions {
         load(): Record<string, string>;
         save(titles: Record<string, string>): void;
     };
+    /** 会话最后活动时间持久化（/sessions 按活动排序，与 Web 一致）。 */
+    activityStore?: {
+        load(): Record<string, number>;
+        save(activity: Record<string, number>): void;
+    };
 }
 export declare class ImGateway {
     private readonly ctx;
@@ -38,6 +43,9 @@ export declare class ImGateway {
     /** 会话标题缓存（sessionId → 标题；dsh 标题缺失时兜底）。 */
     private readonly titleStore;
     private readonly titles;
+    /** 会话最后活动时间（sessionId → epoch ms），/sessions 排序用。 */
+    private readonly activityStore;
+    private readonly lastActivity;
     private readonly channels;
     private readonly router;
     private readonly broker;
@@ -67,6 +75,8 @@ export declare class ImGateway {
     private injectBlocks;
     /** 会话首次收到用户消息时记录标题（dsh 标题缺失时的兜底显示）。 */
     private recordTitleIfNeeded;
+    /** 记录会话最后活动时间（followup 注入时调用）。 */
+    private recordActivity;
     /** 从会话日志懒读取标题（/sessions 列表时对无标题会话补全，结果缓存）。 */
     private lazyTitle;
     private ackFor;
@@ -83,7 +93,7 @@ export declare class ImGateway {
     private persistWorkspaces;
     /** 列出所有工作区（按会话数排序）。 */
     private listWorkspaces;
-    /** 列出会话（可按工作区过滤）。 */
+    /** 列出会话（可按工作区过滤；按最后活动时间排序，无活动记录的按创建时间）。 */
     private listSessions;
     private handleApprovalRequest;
     private answerApproval;

@@ -124,7 +124,28 @@ export function apply(ctx: Context, config: ImGatewayConfig): void {
     },
   }
 
-  const gateway = new ImGateway(ctx, { config, stateDir, log, workspaceStore, titleStore })
+  // 会话最后活动时间持久化（/sessions 按活动排序）
+  const activityFile = join(stateDir, 'last-activity.json')
+  const activityStore = {
+    load: (): Record<string, number> => {
+      try {
+        const parsed = JSON.parse(readFileSync(activityFile, 'utf8')) as Record<string, number>
+        return parsed && typeof parsed === 'object' ? parsed : {}
+      } catch {
+        return {}
+      }
+    },
+    save: (activity: Record<string, number>): void => {
+      try {
+        mkdirSync(stateDir, { recursive: true })
+        writeFileSync(activityFile, JSON.stringify(activity, null, 2))
+      } catch (err) {
+        log(`[manager] 活动时间落盘失败: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    },
+  }
+
+  const gateway = new ImGateway(ctx, { config, stateDir, log, workspaceStore, titleStore, activityStore })
   const manager = new ChannelManager(ctx, { config, stateDir, log, gateway })
   // 未授权用户 → 登记待授权请求（设置面板可一键批准，无需手动找用户 ID）
   gateway.setUnauthorizedHandler((channelId, msg) => {

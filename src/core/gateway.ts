@@ -76,6 +76,11 @@ export interface GatewayOptions {
     load(): Record<string, string>
     save(titles: Record<string, string>): void
   }
+  /** 会话最后活动时间持久化（/sessions 按活动排序，与 Web 一致）。 */
+  activityStore?: {
+    load(): Record<string, number>
+    save(activity: Record<string, number>): void
+  }
 }
 
 export class ImGateway {
@@ -88,6 +93,9 @@ export class ImGateway {
   /** 会话标题缓存（sessionId → 标题；dsh 标题缺失时兜底）。 */
   private readonly titleStore: GatewayOptions['titleStore']
   private readonly titles = new Map<string, string>()
+  /** 会话最后活动时间（sessionId → epoch ms），/sessions 排序用。 */
+  private readonly activityStore: GatewayOptions['activityStore']
+  private readonly lastActivity = new Map<string, number>()
   private readonly channels = new Map<string, ChannelAdapter>()
   private readonly router: SessionRouter
   private readonly broker = new ApprovalBroker()
@@ -109,6 +117,8 @@ export class ImGateway {
     this.workspaceStore = options.workspaceStore
     this.titleStore = options.titleStore
     for (const [sid, title] of Object.entries(options.titleStore?.load() ?? {})) this.titles.set(sid, title)
+    this.activityStore = options.activityStore
+    for (const [sid, time] of Object.entries(options.activityStore?.load() ?? {})) this.lastActivity.set(sid, time)
     this.router = new SessionRouter(ctx, {
       cwd: this.config.cwd,
       provider: this.config.provider,
@@ -303,6 +313,7 @@ export class ImGateway {
     entry.handle?.agent.followup(message)
     this.logLine(`[${channelId}] 消息注入会话 ${entry.sessionId}`)
     this.recordTitleIfNeeded(entry.sessionId, blocks)
+    this.recordActivity(entry.sessionId)
     return this.ackFor(blocks)
   }
 
@@ -315,6 +326,12 @@ export class ImGateway {
       this.titles.set(sessionId, title)
       this.titleStore?.save(Object.fromEntries(this.titles))
     }
+  }
+
+  /** 记录会话最后活动时间（followup 注入时调用）。 */
+  private recordActivity(sessionId: string): void {
+    this.lastActivity.set(sessionId, Date.now())
+    this.activityStore?.save(Object.fromEntries(this.lastActivity))
   }
 
   /** 从会话日志懒读取标题（/sessions 列表时对无标题会话补全，结果缓存）。 */
@@ -565,7 +582,7 @@ export class ImGateway {
     ].filter(Boolean).join('\n')
   }
 
-  /** 列出会话（可按工作区过滤）。 */
+  /** 列出会话（可按工作区过滤；按最后活动时间排序，无活动记录的按创建时间）。 */
   private async listSessions(workspace?: string): Promise<string> {
     const query = this.ctx.sessionQuery
     if (!query) return '会话查询服务不可用。'
@@ -575,6 +592,12 @@ export class ImGateway {
     } catch (err) {
       return `列出会话失败：${err instanceof Error ? err.message : String(err)}`
     }
+    // 排序：网关记录的活动时间优先（与 Web 按 updatedAt 排序一致），无记录用 createdAt
+    records = [...records].sort((a, b) => {
+      const actA = this.lastActivity.get(String(a.header.id)) ?? a.header.createdAt
+      const actB = this.lastActivity.get(String(b.header.id)) ?? b.header.createdAt
+      return actB - actA || String(a.header.id).localeCompare(String(b.header.id))
+    })
     const filtered = workspace ? records.filter((r) => (r.header.cwd ?? '') === workspace) : records
     if (filtered.length === 0) {
       return workspace
@@ -670,10 +693,13 @@ export class ImGateway {
       case 'turn/end': {
         if (!this.config.summaryOnTurnEnd) return
         const label = TURN_END_LABEL[event.data.reason.kind] ?? event.data.reason.kind
+        // 失败时附带错误详情，渠道里直接可见
+        const reason = event.data.reason as { kind: string; error?: { message?: string } }
+        const detail = reason.kind === 'error' && reason.error?.message ? `\n原因：${reason.error.message.slice(0, 300)}` : ''
         for (const chat of chats) {
           const channel = this.channels.get(chat.channelId)
           if (!channel) continue
-          void channel.send(chat.chatId, `[${label}] 会话 ${String(session.id)} 第 ${event.data.turn} 轮结束`).catch(() => undefined)
+          void channel.send(chat.chatId, `[${label}] 会话 ${String(session.id)} 第 ${event.data.turn} 轮结束${detail}`).catch(() => undefined)
         }
         break
       }

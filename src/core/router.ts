@@ -111,7 +111,11 @@ export class SessionRouter {
     let liveAgent = this.ctx.agents.get(SessionId(sessionId))
     if (!liveAgent) {
       try {
-        const handle = await this.ctx.agents.resume({ resumeSessionId: SessionId(sessionId) })
+        // 必须带 agentOptions（provider/model），否则 prompt 组装缺 {{model}} 变量
+        const handle = await this.ctx.agents.resume({
+          resumeSessionId: SessionId(sessionId),
+          agentOptions: { provider: this.options.provider, model: this.options.model },
+        })
         if (existing?.handle) {
           this.unindex(existing)
           await existing.handle.dispose().catch(() => undefined)

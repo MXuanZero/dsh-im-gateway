@@ -35,6 +35,8 @@ function makeCtx() {
       get: (id) => agents.get(String(id))?.agent,
       resume: async (opts) => {
         const sid = String(opts.resumeSessionId)
+        // 记录 resume 选项（测试断言 agentOptions 必须传递）
+        ctx._resumeOpts = opts
         const agent = {
           id: sid,
           session: { id: opts.resumeSessionId, header: { cwd: '/resumed-cwd' } },
@@ -428,6 +430,10 @@ test('/continue 继续已有会话（resume）', async () => {
   const reply = sent.find((s) => s.text.includes('已继续会话'))
   assert.ok(reply, '应返回继续成功')
   assert.ok(reply.text.includes('session-abc-123'))
+  // resume 必须带 agentOptions（provider/model），否则 prompt 组装缺 {{model}}
+  assert.ok(ctx._resumeOpts?.agentOptions, 'resume 应传 agentOptions')
+  assert.equal(ctx._resumeOpts.agentOptions.provider, 'deepseek-official')
+  assert.equal(ctx._resumeOpts.agentOptions.model, 'deepseek-v4-flash')
 
   // 之后的消息进入被继续的会话
   await channel.handler({ chatId: 'c1', userId: 'u1', text: '继续工作!!' })
