@@ -589,7 +589,7 @@ export class ImGateway {
       body,
       '用 /workspace <路径> 切换；/sessions <路径> 查看会话。',
       '',
-    ].join('\n')
+    ].join('\n\n')
   }
 
   /** 列出会话（可按工作区过滤；按最后活动时间排序，无活动记录的按创建时间）。 */
@@ -642,7 +642,7 @@ export class ImGateway {
       body,
       '用 /continue <会话id> 继续某个会话。',
       '',
-    ].join('\n')
+    ].join('\n\n')
   }
 
   // ── 审批桥 ────────────────────────────────────────────────
