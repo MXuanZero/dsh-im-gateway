@@ -31,8 +31,10 @@ interface QQMessage {
   timestamp?: number
 }
 
-const TOKEN_URL = 'https://bots.qq.com/app/getAppAccessToken'
-const API = 'https://api.sgroup.qq.com'
+// 官方最新文档（2026）：统一地址 api.bot.qq.com；Authorization 格式为 "QQBot {access_token}"（不带 appid 前缀，
+// 旧格式 "QQBot appid.token" 与旧域名 bots.qq.com / api.sgroup.qq.com 会返回 11244 AccessToken无效）。
+const TOKEN_URL = 'https://api.bot.qq.com/app/getAppAccessToken'
+const API = 'https://api.bot.qq.com'
 
 export function createQQBotChannel(config: QQBotChannelConfig, log: (line: string) => void): ChannelAdapter | undefined {
   const appId = config.appId ?? process.env.DSH_QQ_APP_ID
@@ -62,7 +64,7 @@ export function createQQBotChannel(config: QQBotChannelConfig, log: (line: strin
     const res = await fetch(`${API}${path}`, {
       ...init,
       headers: {
-        authorization: `QQBot ${appId}.${accessToken}`,
+        authorization: `QQBot ${accessToken}`,
         'content-type': 'application/json',
         ...(init?.headers ?? {}),
       },

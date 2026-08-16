@@ -205,7 +205,9 @@ export class ChannelManager {
     }
     const adapter = createChannel(id, { ...cfg, enabled: true }, this.options.log, this.options.stateDir)
     if (!adapter) {
-      return { ok: false, error: `${meta.label}：缺少必要配置（${meta.needs.join(' / ') || '未知原因'}）` }
+      const error = `${meta.label}：缺少必要配置（${meta.needs.join(' / ') || '未知原因'}）`
+      this.options.log(`[manager] ${id} 连接失败: ${error}`)
+      return { ok: false, error }
     }
     this.options.gateway.register(adapter)
     this.running.set(id, adapter)
@@ -216,7 +218,9 @@ export class ChannelManager {
     } catch (err) {
       this.running.delete(id)
       this.options.gateway.unregister(id)
-      return { ok: false, error: `${meta.label} 启动失败：${err instanceof Error ? err.message : String(err)}` }
+      const error = `${meta.label} 启动失败：${err instanceof Error ? err.message : String(err)}`
+      this.options.log(`[manager] ${id} 启动失败: ${err instanceof Error ? err.message : String(err)}`)
+      return { ok: false, error }
     }
   }
 
