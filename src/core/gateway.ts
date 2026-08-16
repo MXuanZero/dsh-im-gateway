@@ -582,21 +582,22 @@ export class ImGateway {
         : '还没有任何会话。发送 /new 开启一个。'
     }
     const top = filtered.slice(0, 20)
-    let titles: Array<{ ok: boolean; value?: { title?: string } }> = []
+    let titles: Array<{ status: string; value?: { title?: { title?: string } } }> = []
     try {
       const observations = await query.readTitleSnapshots(top.map((r) => r.header.id))
-      titles = observations as unknown as Array<{ ok: boolean; value?: { title?: string } }>
+      // 真实结构: { sessionId, status: 'fulfilled'|'rejected', value: { session, title?: { title } } }
+      titles = observations as unknown as Array<{ status: string; value?: { title?: { title?: string } } }>
     } catch (err) { /* 标题读取失败不阻塞 */ }
     // 无 dsh 标题的会话：用缓存标题，仍无则懒读取会话日志补全（限制并发，显示范围内全部补）
     const needBackfill = top.map((r, i) => ({ r, i })).filter(({ r, i }) => {
-      const dshTitle = titles[i]?.ok ? (titles[i].value?.title ?? '') : ''
+      const dshTitle = dshTitleOf(titles[i])
       return !dshTitle && !this.titles.has(String(r.header.id))
     })
     await runBatched(needBackfill.slice(0, 20), 3, async ({ r }) => {
       await this.lazyTitle(String(r.header.id))
     })
     const body = top.map((r, i) => {
-      const dshTitle = titles[i]?.ok ? (titles[i].value?.title ?? '') : ''
+      const dshTitle = dshTitleOf(titles[i])
       const title = dshTitle || this.titles.get(String(r.header.id)) || ''
       const live = r.live ? '🟢' : '💤'
       const cwd = r.header.cwd ? `\n   📁 ${r.header.cwd.length > 36 ? `…${r.header.cwd.slice(-35)}` : r.header.cwd}` : ''
@@ -731,6 +732,12 @@ function relTime(ms: number): string {
   const hours = Math.floor(min / 60)
   if (hours < 24) return `${hours} 小时前`
   return `${Math.floor(hours / 24)} 天前`
+}
+
+/** 从 readTitleSnapshots 观测结果中取 dsh 标题（真实结构: status 'fulfilled' + value.title.title）。 */
+function dshTitleOf(observation: { status: string; value?: { title?: { title?: string } } } | undefined): string {
+  if (observation?.status !== 'fulfilled') return ''
+  return observation.value?.title?.title ?? ''
 }
 
 /**

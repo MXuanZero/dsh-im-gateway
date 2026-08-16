@@ -387,8 +387,8 @@ test('/sessions 列出会话（mock sessionQuery）', async () => {
       { header: { id: 'session-b', createdAt: Date.now() - 3600_000, cwd: '/ws2' }, live: false, persisted: true },
     ],
     readTitleSnapshots: async () => [
-      { ok: true, value: { title: '我的任务' } },
-      { ok: true, value: { title: '' } },
+      { sessionId: 'session-a', status: 'fulfilled', value: { session: {}, title: { title: '我的任务' } } },
+      { sessionId: 'session-b', status: 'fulfilled', value: { session: {} } },
     ],
   }
   const gw = new ImGateway(ctx, { config: baseConfig, stateDir: '/tmp', log: () => {} })
