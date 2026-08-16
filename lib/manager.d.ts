@@ -49,6 +49,8 @@ export declare class ChannelManager {
     private pending;
     /** 运行中的 adapter：id → { adapter }。 */
     private readonly running;
+    /** API 路由 disposer（HMR 重载/卸载时清理，避免重复注册）。 */
+    private apiDisposers;
     constructor(ctx: Context, options: ManagerOptions);
     private load;
     private flush;
@@ -98,6 +100,8 @@ export declare class ChannelManager {
     list(): ChannelView[];
     /** 注册 HTTP API（prefix 路由，由 webServer 提供）。 */
     registerApi(): void;
+    /** 注销 API 路由（HMR 重载/插件卸载时调用）。 */
+    disposeApi(): void;
     /** 停用全部渠道（插件卸载时）。 */
     disconnectAll(): Promise<void>;
 }

@@ -98,6 +98,7 @@ export function apply(ctx: Context, config: ImGatewayConfig): void {
     })
     manager.registerApi()
     return () => {
+      manager.disposeApi()
       void manager.disconnectAll()
       gateway.dispose()
       void gateway.stopAgents()

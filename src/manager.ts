@@ -55,6 +55,8 @@ export class ChannelManager {
   private pending: Record<string, Array<{ userId: string; username?: string; chatId?: string; time: number }>>
   /** 运行中的 adapter：id → { adapter }。 */
   private readonly running = new Map<string, ChannelAdapter>()
+  /** API 路由 disposer（HMR 重载/卸载时清理，避免重复注册）。 */
+  private apiDisposers: Array<() => void> = []
 
   constructor(ctx: Context, options: ManagerOptions) {
     this.ctx = ctx
@@ -293,7 +295,7 @@ export class ChannelManager {
         })
       })
 
-    webServer.register({
+    this.apiDisposers.push(webServer.register({
       kind: 'prefix',
       path: '/dsh-im-gateway/api',
       handler: async (req, res) => {
@@ -352,8 +354,14 @@ export class ChannelManager {
         }
         send(res, 404, { ok: false, error: 'not found' })
       },
-    })
+    }))
     this.options.log('[manager] API 已注册（/dsh-im-gateway/api）')
+  }
+
+  /** 注销 API 路由（HMR 重载/插件卸载时调用）。 */
+  disposeApi(): void {
+    for (const disposer of this.apiDisposers) disposer()
+    this.apiDisposers = []
   }
 
   /** 停用全部渠道（插件卸载时）。 */
