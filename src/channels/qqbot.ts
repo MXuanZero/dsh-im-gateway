@@ -24,17 +24,20 @@ interface GatewayPayload {
 interface QQMessage {
   id: string
   content?: string
-  author?: { id: string; username?: string }
-  chat_type?: number // 1 私聊 2 群聊
+  author?: {
+    id?: string
+    user_openid?: string
+    member_openid?: string
+    username?: string
+  }
   group_openid?: string
-  user_openid?: string
-  timestamp?: number
+  timestamp?: string
 }
 
-// 官方最新文档（2026）：统一地址 api.bot.qq.com；Authorization 格式为 "QQBot {access_token}"（不带 appid 前缀，
-// 旧格式 "QQBot appid.token" 与旧域名 bots.qq.com / api.sgroup.qq.com 会返回 11244 AccessToken无效）。
-const TOKEN_URL = 'https://api.bot.qq.com/app/getAppAccessToken'
-const API = 'https://api.bot.qq.com'
+const TOKEN_URL = 'https://bots.qq.com/app/getAppAccessToken'
+const API = 'https://api.sgroup.qq.com'
+const GATEWAY_PATH = '/gateway'
+const GROUP_AND_C2C_INTENT = 1 << 25
 
 export function createQQBotChannel(config: QQBotChannelConfig, log: (line: string) => void): ChannelAdapter | undefined {
   const appId = config.appId ?? process.env.DSH_QQ_APP_ID
@@ -44,10 +47,28 @@ export function createQQBotChannel(config: QQBotChannelConfig, log: (line: strin
   let handler: ((msg: ImMessage) => void | Promise<void>) | undefined
   let ws: WebSocket | undefined
   let heartbeat: ReturnType<typeof setInterval> | undefined
+  let reconnectTimer: ReturnType<typeof setTimeout> | undefined
+  let stableTimer: ReturnType<typeof setTimeout> | undefined
+  let reconnectAttempts = 0
   let stopped = false
   let seq: number | null = null
   let accessToken = ''
   let statusText = '未连接'
+
+  function scheduleReconnect(): void {
+    if (stopped || reconnectTimer) return
+    const delay = Math.min(3000 * (2 ** reconnectAttempts), 60_000)
+    reconnectAttempts += 1
+    log(`[qqbot] ${Math.ceil(delay / 1000)}s 后重连`)
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = undefined
+      void connect().catch((err) => {
+        statusText = '重连失败'
+        log(`[qqbot] 重连失败: ${err instanceof Error ? err.message : String(err)}`)
+        scheduleReconnect()
+      })
+    }, delay)
+  }
 
   async function getToken(): Promise<string> {
     const res = await fetch(TOKEN_URL, {
@@ -55,8 +76,16 @@ export function createQQBotChannel(config: QQBotChannelConfig, log: (line: strin
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ appId, clientSecret: appSecret }),
     })
-    const data = (await res.json()) as { access_token?: string; expires_in?: number; code?: number; message?: string }
-    if (!data.access_token) throw new Error(`qq getAppAccessToken: ${data.message ?? 'no token'}`)
+    const body = await res.text()
+    let data: { access_token?: string; expires_in?: number; code?: number; message?: string }
+    try {
+      data = JSON.parse(body) as typeof data
+    } catch {
+      throw new Error(`qq getAppAccessToken: HTTP ${res.status} ${body.slice(0, 200)}`)
+    }
+    if (!res.ok || !data.access_token) {
+      throw new Error(`qq getAppAccessToken: HTTP ${res.status} ${data.message ?? 'no token'}`)
+    }
     return data.access_token
   }
 
@@ -64,7 +93,7 @@ export function createQQBotChannel(config: QQBotChannelConfig, log: (line: strin
     const res = await fetch(`${API}${path}`, {
       ...init,
       headers: {
-        authorization: `QQBot ${accessToken}`,
+        Authorization: `QQBot ${accessToken}`,
         'content-type': 'application/json',
         ...(init?.headers ?? {}),
       },
@@ -77,40 +106,73 @@ export function createQQBotChannel(config: QQBotChannelConfig, log: (line: strin
   }
 
   async function connect(): Promise<void> {
+    if (stopped) return
     accessToken = await getToken()
-    const { url } = await qqFetch<{ url: string }>('/gateway/bot')
-    ws = new WebSocket(url)
-    ws.onopen = () => {
-      ws?.send(JSON.stringify({
-        op: 2,
-        d: { token: `${appId}.${accessToken}`, intents: (1 << 25) | (1 << 30) }, // C2C_EVENT(私聊) + GROUP_AND_C2C_EVENT
-      }))
+    if (stopped) return
+    const { url } = await qqFetch<{ url: string }>(GATEWAY_PATH)
+    if (!url) throw new Error('qq gateway: missing websocket url')
+    if (stopped) return
+
+    const socket = new WebSocket(url)
+    ws = socket
+    statusText = '连接中'
+    socket.onopen = () => {
+      if (ws === socket) statusText = '等待网关握手'
     }
-    ws.onmessage = (ev) => {
-      const payload = JSON.parse(String(ev.data)) as GatewayPayload
+    socket.onmessage = (ev) => {
+      let payload: GatewayPayload
+      try {
+        payload = JSON.parse(String(ev.data)) as GatewayPayload
+      } catch {
+        log('[qqbot] 收到无法解析的网关消息')
+        return
+      }
       if (payload.s !== undefined) seq = payload.s
       switch (payload.op) {
         case 10: {
           const hello = payload.d as { heartbeat_interval: number }
-          heartbeat = setInterval(() => ws?.send(JSON.stringify({ op: 1, d: seq })), hello.heartbeat_interval)
-          statusText = '已连接'
-          log('[qqbot] 网关就绪')
+          socket.send(JSON.stringify({
+            op: 2,
+            d: {
+              token: `QQBot ${accessToken}`,
+              intents: GROUP_AND_C2C_INTENT,
+              shard: [0, 1],
+            },
+          }))
+          clearInterval(heartbeat)
+          heartbeat = setInterval(() => {
+            if (ws === socket) socket.send(JSON.stringify({ op: 1, d: seq }))
+          }, hello.heartbeat_interval)
+          statusText = '鉴权中'
+          log('[qqbot] 已收到 Hello，正在鉴权')
           break
         }
         case 0: {
           const t = payload.t
-          const d = payload.d as { msg?: QQMessage; group_openid?: string; user_openid?: string }
+          if (t === 'READY') {
+            clearTimeout(stableTimer)
+            stableTimer = setTimeout(() => { reconnectAttempts = 0 }, 60_000)
+            statusText = '已连接'
+            log('[qqbot] 网关就绪')
+            break
+          }
           if (t === 'C2C_MESSAGE_CREATE' || t === 'GROUP_AT_MESSAGE_CREATE') {
-            const msg = d.msg
+            const msg = payload.d as QQMessage
             if (!msg?.content || !msg.author) return
-            const chatId = msg.group_openid ?? msg.user_openid ?? ''
-            if (!chatId) return
+            const isGroup = t === 'GROUP_AT_MESSAGE_CREATE'
+            const userId = isGroup
+              ? (msg.author.member_openid ?? msg.author.id)
+              : (msg.author.user_openid ?? msg.author.id)
+            const chatId = isGroup
+              ? (msg.group_openid ? `g:${msg.group_openid}` : '')
+              : (msg.author.user_openid ?? msg.author.id ?? '')
+            if (!chatId || !userId) return
             void handler?.({
               chatId,
-              userId: msg.author.id,
+              userId,
               username: msg.author.username,
               text: msg.content,
-              context: { chatType: msg.chat_type },
+              context: { messageId: msg.id, messageType: isGroup ? 'group' : 'c2c' },
             })
           }
           break
@@ -120,17 +182,22 @@ export function createQQBotChannel(config: QQBotChannelConfig, log: (line: strin
           break
       }
     }
-    ws.onclose = (ev) => {
+    socket.onclose = (ev) => {
+      if (ws !== socket) return
       clearInterval(heartbeat)
       heartbeat = undefined
+      clearTimeout(stableTimer)
+      stableTimer = undefined
+      ws = undefined
       statusText = `已断开（code ${ev.code}）`
       if (!stopped) {
-        log(`[qqbot] 连接断开（${ev.code}），3s 后重连`)
-        setTimeout(() => void connect(), 3000)
+        const detail = ev.code === 4004 ? '：鉴权失败，将刷新 AccessToken' : ''
+        log(`[qqbot] 连接断开（${ev.code}${detail}）`)
+        scheduleReconnect()
       }
     }
-    ws.onerror = () => {
-      statusText = '连接错误'
+    socket.onerror = () => {
+      if (ws === socket) statusText = '连接错误'
     }
   }
 
@@ -139,12 +206,24 @@ export function createQQBotChannel(config: QQBotChannelConfig, log: (line: strin
     label: 'QQ 机器人',
     maxMessageLength: 2000,
     async start() {
+      if (!stopped && (ws || reconnectTimer)) return
       stopped = false
-      await connect()
+      reconnectAttempts = 0
+      try {
+        await connect()
+      } catch (err) {
+        statusText = '连接失败'
+        log(`[qqbot] 连接失败: ${err instanceof Error ? err.message : String(err)}`)
+        scheduleReconnect()
+      }
     },
     async stop() {
       stopped = true
       clearInterval(heartbeat)
+      clearTimeout(reconnectTimer)
+      reconnectTimer = undefined
+      clearTimeout(stableTimer)
+      stableTimer = undefined
       ws?.close(1000, 'shutdown')
       ws = undefined
     },
