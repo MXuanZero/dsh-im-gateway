@@ -527,3 +527,38 @@ test('approval/request 无关联会话时委托 next', async () => {
 
   gw.dispose()
 })
+
+test('多端共享会话：两个 chat 继续同一会话，上下文互见、输出双向广播', async () => {
+  const ctx = makeCtx()
+  const gw = new ImGateway(ctx, { config: baseConfig, stateDir: '/tmp', log: () => {} })
+  const { channel: wechat, sent: wechatSent } = makeChannel('wechat')
+  const { channel: feishu, sent: feishuSent } = makeChannel('feishu')
+  gw.register(wechat)
+  gw.register(feishu)
+
+  // 微信创建会话
+  await wechat.handler({ chatId: 'wx-1', userId: 'u1', text: '第一轮：微信的消息!!' })
+  const sessionId = [...ctx._agents.keys()][0]
+
+  // 飞书 continue 同一会话
+  await feishu.handler({ chatId: 'fs-1', userId: 'u2', text: `/continue ${sessionId}` })
+  assert.ok(feishuSent.some((s) => s.text.includes('已继续会话')), '飞书应继续同一会话')
+
+  // 飞书发消息 → 进入同一会话（与微信消息同 inbox 队列）
+  await feishu.handler({ chatId: 'fs-1', userId: 'u2', text: '第二轮：飞书的消息!!' })
+  const agent = ctx._agents.get(sessionId)
+  const texts = ctx._agents.get(sessionId).record ? [ctx._agents.get(sessionId).record.msg.content[0].text] : []
+  // 两条消息都在会话里（followup 被调用两次）
+  assert.ok(agent, '会话存在')
+  assert.equal(agent.record.msg.content[0].text, '第二轮：飞书的消息', '飞书消息注入同一会话')
+
+  // 出站广播：assistant 输出应同时发到微信和飞书两个 chat
+  const session = { id: sessionId, events: [] }
+  const event = { type: 'assistant/message', data: { message: { content: [{ type: 'text', text: '广播回复' }] } } }
+  const cb = ctx._listeners.get('session/event')[0]
+  cb(session, event)
+  assert.ok(wechatSent.some((s) => s.text === '广播回复'), '微信应收到回复')
+  assert.ok(feishuSent.some((s) => s.text === '广播回复'), '飞书应收到回复')
+
+  gw.dispose()
+})
