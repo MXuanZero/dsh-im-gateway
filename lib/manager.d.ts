@@ -15,6 +15,8 @@ export interface ChannelView {
     id: string;
     label: string;
     emoji: string;
+    iconDomain?: string;
+    docs?: string;
     kind: ChannelMeta['kind'];
     needs: string[];
     fields: ChannelMeta['fields'];

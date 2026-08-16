@@ -69,6 +69,10 @@ export interface ChannelField {
 export interface ChannelMeta {
   label: string
   emoji: string
+  /** 图标 favicon 域名（前端经 icons.duckduckgo.com/ip3/<domain>.ico 加载）。 */
+  iconDomain?: string
+  /** 凭据获取/官方文档地址（前端显示为链接）。 */
+  docs?: string
   /** 连接所需的最小配置字段（UI 表单提示）。 */
   needs: string[]
   /** 凭据表单字段（kind=credentials 时渲染输入框）。 */
@@ -80,29 +84,29 @@ export interface ChannelMeta {
 }
 
 export const CHANNEL_META: Record<ChannelId, ChannelMeta> = {
-  wechat: { label: '微信', emoji: '💬', needs: [], fields: [], hint: '扫码登录，官方 iLink 协议，仅私聊（建议专用小号）', kind: 'qr' },
-  feishu: { label: '飞书 / Lark', emoji: '📘', needs: ['App ID', 'App Secret'], fields: [{ key: 'appId', label: 'App ID' }, { key: 'appSecret', label: 'App Secret', secret: true }], hint: '开放平台创建应用，机器人事件走 WebSocket 长连接', kind: 'credentials' },
-  telegram: { label: 'Telegram', emoji: '✈️', needs: ['Bot Token'], fields: [{ key: 'token', label: 'Bot Token', secret: true }], hint: '找 @BotFather 创建机器人拿 token', kind: 'credentials' },
-  qqbot: { label: 'QQ 机器人', emoji: '🐧', needs: ['AppID', 'AppSecret'], fields: [{ key: 'appId', label: 'AppID' }, { key: 'appSecret', label: 'AppSecret', secret: true }], hint: 'QQ 开放平台创建机器人（官方 API）', kind: 'credentials' },
-  discord: { label: 'Discord', emoji: '🎮', needs: ['Bot Token'], fields: [{ key: 'token', label: 'Bot Token', secret: true }], hint: 'Discord Developer Portal 创建应用拿 token', kind: 'credentials' },
-  slack: { label: 'Slack', emoji: '💼', needs: ['Bot Token', 'App Token'], fields: [{ key: 'token', label: 'Bot Token (xoxb-)', secret: true }, { key: 'appToken', label: 'App Token (xapp-)', secret: true }], hint: 'Socket Mode 需要 xoxb- 和 xapp- 两个 token', kind: 'credentials' },
-  whatsapp: { label: 'WhatsApp', emoji: '🟢', needs: [], fields: [], hint: '扫码配对（需安装 baileys 依赖）', kind: 'qr' },
-  signal: { label: 'Signal', emoji: '🔒', needs: ['手机号', 'signal-cli'], fields: [{ key: 'phone', label: '本机号码（+86…）' }], hint: '需本机安装 signal-cli 并注册号码', kind: 'credentials' },
-  msteams: { label: 'Microsoft Teams', emoji: '🏢', needs: ['App ID', 'App Password'], fields: [{ key: 'appId', label: 'App ID' }, { key: 'appPassword', label: 'App Password', secret: true }], hint: '实验性：需 Azure Bot Framework 注册', kind: 'credentials' },
-  line: { label: 'LINE', emoji: '🟩', needs: ['Channel Token'], fields: [{ key: 'channelToken', label: 'Channel Access Token', secret: true }], hint: 'Messaging API；接收需公网 webhook', kind: 'credentials' },
-  matrix: { label: 'Matrix', emoji: '🧩', needs: ['Homeserver', 'Access Token'], fields: [{ key: 'homeserver', label: 'Homeserver（如 https://matrix.org）' }, { key: 'accessToken', label: 'Access Token', secret: true }], hint: '客户端同步长轮询', kind: 'credentials' },
-  mattermost: { label: 'Mattermost', emoji: '🅜', needs: ['Server URL', 'Token'], fields: [{ key: 'serverUrl', label: '服务器地址' }, { key: 'token', label: '个人访问令牌', secret: true }], hint: 'WebSocket + REST', kind: 'credentials' },
-  googlechat: { label: 'Google Chat', emoji: '🔷', needs: [], fields: [], hint: '实验性：接收需公网 webhook', kind: 'stub' },
-  irc: { label: 'IRC', emoji: '💻', needs: ['服务器地址'], fields: [{ key: 'server', label: '服务器地址' }, { key: 'nick', label: '昵称（可选）' }], hint: '经典 IRC 协议', kind: 'credentials' },
-  twitch: { label: 'Twitch', emoji: '📺', needs: ['Bot 名', 'OAuth Token'], fields: [{ key: 'botName', label: 'Bot 用户名' }, { key: 'token', label: 'OAuth Token', secret: true }], hint: 'WebSocket IRC', kind: 'credentials' },
-  nostr: { label: 'Nostr', emoji: '🧅', needs: ['私钥', '中继'], fields: [{ key: 'privateKey', label: '私钥 (hex)', secret: true }, { key: 'relays', label: '中继（逗号分隔）' }], hint: 'NIP-04 私信（需安装 @noble/curves）', kind: 'credentials' },
-  nextcloud: { label: 'Nextcloud Talk', emoji: '☁️', needs: ['Server URL', '账号', '密码'], fields: [{ key: 'serverUrl', label: '服务器地址' }, { key: 'user', label: '用户名' }, { key: 'password', label: '密码', secret: true }], hint: '实验性：Nextcloud Talk', kind: 'credentials' },
-  synology: { label: 'Synology Chat', emoji: '🖥️', needs: ['Webhook URL'], fields: [{ key: 'webhookUrl', label: 'Incoming Webhook URL', secret: true }], hint: '群晖 NAS 聊天', kind: 'credentials' },
-  zalo: { label: 'Zalo', emoji: '🇻🇳', needs: ['Access Token'], fields: [{ key: 'accessToken', label: 'OA Access Token', secret: true }], hint: '实验性：Zalo OA', kind: 'credentials' },
-  imessage: { label: 'iMessage', emoji: '🍏', needs: [], fields: [], hint: 'macOS only；发送 osascript / 接收 imsg 桥', kind: 'simple' },
-  tlon: { label: 'Tlon (Urbit)', emoji: '🌌', needs: [], fields: [], hint: '骨架：未实现完整协议', kind: 'stub' },
-  yuanbao: { label: '腾讯元宝', emoji: '🧧', needs: [], fields: [], hint: '骨架：未实现', kind: 'stub' },
-  voice: { label: '语音电话', emoji: '📞', needs: [], fields: [], hint: '骨架：需 Twilio/Plivo', kind: 'stub' },
+  wechat: { label: '微信', emoji: '💬', iconDomain: 'weixin.qq.com', docs: 'https://docs.openclaw.ai/channels/wechat', needs: [], fields: [], hint: '扫码登录，官方 iLink 协议，仅私聊（建议专用小号）', kind: 'qr' },
+  feishu: { label: '飞书 / Lark', emoji: '📘', iconDomain: 'feishu.cn', docs: 'https://open.feishu.cn/app', needs: ['App ID', 'App Secret'], fields: [{ key: 'appId', label: 'App ID' }, { key: 'appSecret', label: 'App Secret', secret: true }], hint: '开放平台创建应用，机器人事件走 WebSocket 长连接', kind: 'credentials' },
+  telegram: { label: 'Telegram', emoji: '✈️', iconDomain: 'telegram.org', docs: 'https://t.me/BotFather', needs: ['Bot Token'], fields: [{ key: 'token', label: 'Bot Token', secret: true }], hint: '找 @BotFather 创建机器人拿 token', kind: 'credentials' },
+  qqbot: { label: 'QQ 机器人', emoji: '🐧', iconDomain: 'qq.com', docs: 'https://q.qq.com/', needs: ['AppID', 'AppSecret'], fields: [{ key: 'appId', label: 'AppID' }, { key: 'appSecret', label: 'AppSecret', secret: true }], hint: 'QQ 开放平台创建机器人（官方 API）', kind: 'credentials' },
+  discord: { label: 'Discord', emoji: '🎮', iconDomain: 'discord.com', docs: 'https://discord.com/developers/applications', needs: ['Bot Token'], fields: [{ key: 'token', label: 'Bot Token', secret: true }], hint: 'Discord Developer Portal 创建应用拿 token', kind: 'credentials' },
+  slack: { label: 'Slack', emoji: '💼', iconDomain: 'slack.com', docs: 'https://api.slack.com/apps', needs: ['Bot Token', 'App Token'], fields: [{ key: 'token', label: 'Bot Token (xoxb-)', secret: true }, { key: 'appToken', label: 'App Token (xapp-)', secret: true }], hint: 'Socket Mode 需要 xoxb- 和 xapp- 两个 token', kind: 'credentials' },
+  whatsapp: { label: 'WhatsApp', emoji: '🟢', iconDomain: 'whatsapp.com', docs: 'https://docs.openclaw.ai/channels/whatsapp', needs: [], fields: [], hint: '扫码配对（需安装 baileys 依赖）', kind: 'qr' },
+  signal: { label: 'Signal', emoji: '🔒', iconDomain: 'signal.org', docs: 'https://github.com/AsamK/signal-cli', needs: ['手机号', 'signal-cli'], fields: [{ key: 'phone', label: '本机号码（+86…）' }], hint: '需本机安装 signal-cli 并注册号码', kind: 'credentials' },
+  msteams: { label: 'Microsoft Teams', emoji: '🏢', iconDomain: 'microsoft.com', docs: 'https://learn.microsoft.com/azure/bot-service', needs: ['App ID', 'App Password'], fields: [{ key: 'appId', label: 'App ID' }, { key: 'appPassword', label: 'App Password', secret: true }], hint: '实验性：需 Azure Bot Framework 注册', kind: 'credentials' },
+  line: { label: 'LINE', emoji: '🟩', iconDomain: 'line.me', docs: 'https://developers.line.biz/', needs: ['Channel Token'], fields: [{ key: 'channelToken', label: 'Channel Access Token', secret: true }], hint: 'Messaging API；接收需公网 webhook', kind: 'credentials' },
+  matrix: { label: 'Matrix', emoji: '🧩', iconDomain: 'matrix.org', docs: 'https://matrix.org/', needs: ['Homeserver', 'Access Token'], fields: [{ key: 'homeserver', label: 'Homeserver（如 https://matrix.org）' }, { key: 'accessToken', label: 'Access Token', secret: true }], hint: '客户端同步长轮询', kind: 'credentials' },
+  mattermost: { label: 'Mattermost', emoji: '🅜', iconDomain: 'mattermost.com', docs: 'https://mattermost.com/', needs: ['Server URL', 'Token'], fields: [{ key: 'serverUrl', label: '服务器地址' }, { key: 'token', label: '个人访问令牌', secret: true }], hint: 'WebSocket + REST', kind: 'credentials' },
+  googlechat: { label: 'Google Chat', emoji: '🔷', iconDomain: 'google.com', docs: 'https://developers.google.com/workspace/chat', needs: [], fields: [], hint: '实验性：接收需公网 webhook', kind: 'stub' },
+  irc: { label: 'IRC', emoji: '💻', iconDomain: 'libera.chat', docs: 'https://libera.chat/', needs: ['服务器地址'], fields: [{ key: 'server', label: '服务器地址' }, { key: 'nick', label: '昵称（可选）' }], hint: '经典 IRC 协议', kind: 'credentials' },
+  twitch: { label: 'Twitch', emoji: '📺', iconDomain: 'twitch.tv', docs: 'https://twitchtokengenerator.com/', needs: ['Bot 名', 'OAuth Token'], fields: [{ key: 'botName', label: 'Bot 用户名' }, { key: 'token', label: 'OAuth Token', secret: true }], hint: 'WebSocket IRC', kind: 'credentials' },
+  nostr: { label: 'Nostr', emoji: '🧅', iconDomain: 'nostr.com', docs: 'https://nostr.com/', needs: ['私钥', '中继'], fields: [{ key: 'privateKey', label: '私钥 (hex)', secret: true }, { key: 'relays', label: '中继（逗号分隔）' }], hint: 'NIP-04 私信（需安装 @noble/curves）', kind: 'credentials' },
+  nextcloud: { label: 'Nextcloud Talk', emoji: '☁️', iconDomain: 'nextcloud.com', docs: 'https://nextcloud.com/talk/', needs: ['Server URL', '账号', '密码'], fields: [{ key: 'serverUrl', label: '服务器地址' }, { key: 'user', label: '用户名' }, { key: 'password', label: '密码', secret: true }], hint: '实验性：Nextcloud Talk', kind: 'credentials' },
+  synology: { label: 'Synology Chat', emoji: '🖥️', iconDomain: 'synology.com', docs: 'https://www.synology.com/', needs: ['Webhook URL'], fields: [{ key: 'webhookUrl', label: 'Incoming Webhook URL', secret: true }], hint: '群晖 NAS 聊天', kind: 'credentials' },
+  zalo: { label: 'Zalo', emoji: '🇻🇳', iconDomain: 'zalo.me', docs: 'https://developers.zalo.me/', needs: ['Access Token'], fields: [{ key: 'accessToken', label: 'OA Access Token', secret: true }], hint: '实验性：Zalo OA', kind: 'credentials' },
+  imessage: { label: 'iMessage', emoji: '🍏', iconDomain: 'apple.com', docs: 'https://support.apple.com/imessage', needs: [], fields: [], hint: 'macOS only；发送 osascript / 接收 imsg 桥', kind: 'simple' },
+  tlon: { label: 'Tlon (Urbit)', emoji: '🌌', iconDomain: 'tlon.io', docs: 'https://tlon.io/', needs: [], fields: [], hint: '骨架：未实现完整协议', kind: 'stub' },
+  yuanbao: { label: '腾讯元宝', emoji: '🧧', iconDomain: 'yuanbao.tencent.com', docs: 'https://yuanbao.tencent.com/', needs: [], fields: [], hint: '骨架：未实现', kind: 'stub' },
+  voice: { label: '语音电话', emoji: '📞', iconDomain: 'twilio.com', docs: 'https://www.twilio.com/', needs: [], fields: [], hint: '骨架：需 Twilio/Plivo', kind: 'stub' },
 }
 
 /** 创建单个渠道（凭据缺失/未启用返回 undefined）。 */

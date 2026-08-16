@@ -23,6 +23,10 @@ export interface ChannelField {
 export interface ChannelMeta {
     label: string;
     emoji: string;
+    /** 图标 favicon 域名（前端经 icons.duckduckgo.com/ip3/<domain>.ico 加载）。 */
+    iconDomain?: string;
+    /** 凭据获取/官方文档地址（前端显示为链接）。 */
+    docs?: string;
     /** 连接所需的最小配置字段（UI 表单提示）。 */
     needs: string[];
     /** 凭据表单字段（kind=credentials 时渲染输入框）。 */

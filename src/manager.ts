@@ -19,6 +19,8 @@ export interface ChannelView {
   id: string
   label: string
   emoji: string
+  iconDomain?: string
+  docs?: string
   kind: ChannelMeta['kind']
   needs: string[]
   fields: ChannelMeta['fields']
@@ -263,6 +265,8 @@ export class ChannelManager {
         id,
         label: meta.label,
         emoji: meta.emoji,
+        iconDomain: meta.iconDomain,
+        docs: meta.docs,
         kind: meta.kind,
         needs: meta.needs,
         fields: meta.fields,
