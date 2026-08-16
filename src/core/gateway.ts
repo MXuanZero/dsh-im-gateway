@@ -41,7 +41,7 @@ const HELP_TEXT = [
   '/clear — 同 /new',
   '/workspaces — 列出所有工作区',
   '/workspace <路径> — 切换工作区（后续 /new 生效）',
-  '/sessions [路径] — 列出会话（默认全部；带路径按工作区过滤）',
+  '/sessions [all|路径] — 列出会话（默认当前工作区；all 全部）',
   '/continue <会话id> — 继续已有会话（跨渠道/跨工作区）',
   '/bind <session-id> — 绑定本机 live 会话（bound 模式）',
   '/unbind — 解绑（bound 模式）',
@@ -488,11 +488,15 @@ export class ImGateway {
         return `✅ 工作区已切换：${target}\n发送 /new 在此工作区开启新会话，或 /sessions 查看该工作区的历史会话。`
       }
       case '/sessions': {
-        // 默认显示全部会话（与 Web GUI 侧边栏一致）；带路径参数时按工作区过滤
+        // 默认当前聊天工作区（与 Web 侧边栏当前工作区视角一致）；all 显示全部
         const filter = args[0]
         let workspace: string | undefined
-        if (filter && filter !== 'all') {
+        if (filter === 'all') {
+          workspace = undefined
+        } else if (filter) {
           workspace = filter.startsWith('/') ? filter : resolve(this.config.cwd, filter)
+        } else {
+          workspace = this.router.workspaceOf(channelId, chatId) ?? this.config.cwd
         }
         return await this.listSessions(workspace)
       }
@@ -576,12 +580,13 @@ export class ImGateway {
       return workspace
         ? `该工作区没有会话：${workspace}\n发送 /new 开启一个。`
         : '还没有任何会话。发送 /new 开启一个。'
-    }    const top = filtered.slice(0, 20)
+    }
+    const top = filtered.slice(0, 20)
     let titles: Array<{ ok: boolean; value?: { title?: string } }> = []
     try {
       const observations = await query.readTitleSnapshots(top.map((r) => r.header.id))
       titles = observations as unknown as Array<{ ok: boolean; value?: { title?: string } }>
-    } catch { /* 标题读取失败不阻塞 */ }
+    } catch (err) { /* 标题读取失败不阻塞 */ }
     // 无 dsh 标题的会话：用缓存标题，仍无则懒读取会话日志补全（限制并发，显示范围内全部补）
     const needBackfill = top.map((r, i) => ({ r, i })).filter(({ r, i }) => {
       const dshTitle = titles[i]?.ok ? (titles[i].value?.title ?? '') : ''
@@ -598,7 +603,7 @@ export class ImGateway {
       return `[${i + 1}] ${r.header.id} ${title ? `「${title.slice(0, 30)}」` : ''}${r.header.createdAt ? ` · ${relTime(r.header.createdAt)}` : ''} ${live}${cwd}`
     }).join('\n\n')
     return [
-      `📋 ${workspace ? `会话（${workspace}）` : '全部会话'}：${filtered.length} 个${filtered.length > 20 ? `，显示前 20` : ''}${workspace ? '' : '（与 Web 侧边栏一致）'}`,
+      `📋 ${workspace ? `会话（当前工作区 ${workspace}）` : '全部会话'}：${filtered.length} 个${filtered.length > 20 ? `，显示前 20` : ''}${workspace ? `（/sessions all 查看全部）` : ''}`,
       body,
       '用 /continue <会话id> 继续某个会话。',
     ].filter(Boolean).join('\n')
@@ -728,15 +733,38 @@ function relTime(ms: number): string {
   return `${Math.floor(hours / 24)} 天前`
 }
 
-/** 从文本生成简短标题（去命令、去换行、截断 24 字符）。 */
+/**
+ * 从文本生成简短标题：与 dsh session-title 官方 fallback 算法一致
+ * （清洗控制字符 + 取前 5 词 + 40 字节 UTF-8 截断），另去掉命令/终端前缀。
+ */
 function summarizeTitle(text: string): string {
   const clean = text
-    .replace(/^\/(help|status|new|clear|sessions|workspace\S*|continue\S*|workspaces|bind\S*|unbind|channels)\b.*$/m, '')
-    .replace(/[`*_#>\-]+/g, ' ')
+    // 去掉 IM 命令前缀
+    .replace(/^\/(help|status|new|clear|sessions|workspace\S*|continue\S*|workspaces|bind\S*|unbind|channels)(\s|$).*$/m, '')
+    // 去掉终端提示符前缀（如 chasemoon@host ~ %）
+    .replace(/^[\w.-]+@[\w.-]+[^\n]{0,30}?[%$#]\s*/m, '')
+    // 去掉围栏代码块
+    .replace(/```[\s\S]*?```/g, ' ')
+    // 清洗控制字符与 ANSI 转义（对齐 dsh cleanTitleText）
+    .replace(/[\u001b\u009b][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[-a-zA-Z\d/#&.:=?%@~_]*)*)?\u0007)|(?:(?:\d{1,4}(?:[;:]\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g, '')
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u202a-\u202e]/g, '')
+    // 空白归一化
     .replace(/\s+/g, ' ')
     .trim()
   if (clean === '') return ''
-  return [...clean].slice(0, 24).join('')
+  // 前 5 词（对齐 dsh fallbackMaxWords: 5）
+  const words = clean.split(' ').filter(Boolean).slice(0, 5).join(' ')
+  // 40 字节 UTF-8 截断（对齐 dsh fallbackMaxBytes: 40），不拆散码点
+  if (Buffer.byteLength(words, 'utf8') <= 40) return words
+  let used = 0
+  let out = ''
+  for (const ch of words) {
+    const bytes = Buffer.byteLength(ch, 'utf8')
+    if (used + bytes > 40) break
+    out += ch
+    used += bytes
+  }
+  return out
 }
 
 /** 分批并发执行（限制并发数，避免一次性打爆资源）。 */

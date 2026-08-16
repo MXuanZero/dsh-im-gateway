@@ -395,16 +395,22 @@ test('/sessions 列出会话（mock sessionQuery）', async () => {
   const { channel, sent } = makeChannel()
   gw.register(channel)
 
+  // 默认 = 当前聊天工作区（baseConfig.cwd，mock 会话不在该工作区 → 空提示）
   await channel.handler({ chatId: 'c1', userId: 'u1', text: '/sessions' })
+  const empty = sent.find((s) => s.text.includes('该工作区没有会话'))
+  assert.ok(empty, '默认按当前工作区过滤')
+
+  // all = 全部
+  await channel.handler({ chatId: 'c1', userId: 'u1', text: '/sessions all' })
   const reply = sent.find((s) => s.text.includes('📋 全部会话'))
-  assert.ok(reply, '应返回全部会话列表（默认与 Web 一致）')
+  assert.ok(reply, '应返回全部会话列表')
   assert.ok(reply.text.includes('session-a'), '应包含会话 id')
   assert.ok(reply.text.includes('我的任务'), '应包含标题')
   assert.ok(reply.text.includes('/ws1'), '应包含工作区')
 
   // 按工作区过滤
   await channel.handler({ chatId: 'c1', userId: 'u1', text: '/sessions /ws2' })
-  const filtered = sent.find((s) => s.text.includes('📋 会话（/ws2）'))
+  const filtered = sent.find((s) => s.text.includes('📋 会话（当前工作区 /ws2）'))
   assert.ok(filtered, '应按工作区过滤')
   assert.ok(filtered.text.includes('session-b'), '应包含该工作区会话')
   assert.ok(!filtered.text.includes('session-a'), '不应包含其他工作区会话')
