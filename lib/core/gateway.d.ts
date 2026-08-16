@@ -32,6 +32,8 @@ export interface GatewayOptions {
         load(): Record<string, number>;
         save(activity: Record<string, number>): void;
     };
+    /** 会话日志根目录（$DSH_HOME/sessions），用于读取历史会话的最后更新时间。 */
+    sessionsRoot?: string;
 }
 export declare class ImGateway {
     private readonly ctx;
@@ -45,6 +47,8 @@ export declare class ImGateway {
     private readonly titles;
     /** 会话最后活动时间（sessionId → epoch ms），/sessions 排序用。 */
     private readonly activityStore;
+    /** 会话日志根目录（历史会话 update_time 读取）。 */
+    private readonly sessionsRoot;
     private readonly lastActivity;
     private readonly channels;
     private readonly router;
@@ -93,8 +97,10 @@ export declare class ImGateway {
     private persistWorkspaces;
     /** 列出所有工作区（按会话数排序）。 */
     private listWorkspaces;
-    /** 列出会话（可按工作区过滤；按最后活动时间排序，无活动记录的按创建时间）。 */
+    /** 列出会话：标题优先、目录置顶分组、按最后更新时间排序。 */
     private listSessions;
+    /** 会话最后更新时间：网关注入缓存 → 日志文件 mtime → createdAt。 */
+    private updateTimeOf;
     private handleApprovalRequest;
     private answerApproval;
     private handleSessionEvent;

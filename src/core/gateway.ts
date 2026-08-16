@@ -21,9 +21,10 @@ import type {} from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-tools'
 // 引入 dsh-session-query 模块增强（ctx.sessionQuery：会话列表/标题）
 import type {} from '@deepseek-ai/dsh-session-query'
-import { readFile } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import { statSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { resolve, join } from 'node:path'
+import { homedir } from 'node:os'
 import { ApprovalBroker } from './approval.js'
 import { SessionMerger, type MergeResult } from './merge.js'
 import { SessionRouter, type ChatEntry } from './router.js'
@@ -81,6 +82,8 @@ export interface GatewayOptions {
     load(): Record<string, number>
     save(activity: Record<string, number>): void
   }
+  /** 会话日志根目录（$DSH_HOME/sessions），用于读取历史会话的最后更新时间。 */
+  sessionsRoot?: string
 }
 
 export class ImGateway {
@@ -95,6 +98,8 @@ export class ImGateway {
   private readonly titles = new Map<string, string>()
   /** 会话最后活动时间（sessionId → epoch ms），/sessions 排序用。 */
   private readonly activityStore: GatewayOptions['activityStore']
+  /** 会话日志根目录（历史会话 update_time 读取）。 */
+  private readonly sessionsRoot: string
   private readonly lastActivity = new Map<string, number>()
   private readonly channels = new Map<string, ChannelAdapter>()
   private readonly router: SessionRouter
@@ -118,6 +123,7 @@ export class ImGateway {
     this.titleStore = options.titleStore
     for (const [sid, title] of Object.entries(options.titleStore?.load() ?? {})) this.titles.set(sid, title)
     this.activityStore = options.activityStore
+    this.sessionsRoot = options.sessionsRoot ?? join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'sessions')
     for (const [sid, time] of Object.entries(options.activityStore?.load() ?? {})) this.lastActivity.set(sid, time)
     this.router = new SessionRouter(ctx, {
       cwd: this.config.cwd,
@@ -592,7 +598,7 @@ export class ImGateway {
     ].join('\n\n')
   }
 
-  /** 列出会话（可按工作区过滤；按最后活动时间排序，无活动记录的按创建时间）。 */
+  /** 列出会话：标题优先、目录置顶分组、按最后更新时间排序。 */
   private async listSessions(workspace?: string): Promise<string> {
     const query = this.ctx.sessionQuery
     if (!query) return '会话查询服务不可用。'
@@ -602,18 +608,23 @@ export class ImGateway {
     } catch (err) {
       return `列出会话失败：${err instanceof Error ? err.message : String(err)}`
     }
-    // 排序：网关记录的活动时间优先（与 Web 按 updatedAt 排序一致），无记录用 createdAt
-    records = [...records].sort((a, b) => {
-      const actA = this.lastActivity.get(String(a.header.id)) ?? a.header.createdAt
-      const actB = this.lastActivity.get(String(b.header.id)) ?? b.header.createdAt
-      return actB - actA || String(a.header.id).localeCompare(String(b.header.id))
-    })
     const filtered = workspace ? records.filter((r) => (r.header.cwd ?? '') === workspace) : records
     if (filtered.length === 0) {
       return workspace
         ? `该工作区没有会话：${workspace}\n发送 /new 开启一个。`
         : '还没有任何会话。发送 /new 开启一个。'
     }
+    // 更新时间：网关注入缓存 → 会话日志文件 mtime → createdAt 兜底
+    const updates = new Map<string, number>()
+    await runBatched(filtered.slice(0, 40), 8, async (r) => {
+      updates.set(String(r.header.id), await this.updateTimeOf(r))
+    })
+    // 按最后更新时间排序（与 Web 的 updatedAt 一致）
+    filtered.sort((a, b) => {
+      const uA = updates.get(String(a.header.id)) ?? a.header.createdAt
+      const uB = updates.get(String(b.header.id)) ?? b.header.createdAt
+      return uB - uA || String(a.header.id).localeCompare(String(b.header.id))
+    })
     const top = filtered.slice(0, 20)
     let titles: Array<{ status: string; value?: { title?: { title?: string } } }> = []
     try {
@@ -629,20 +640,49 @@ export class ImGateway {
     await runBatched(needBackfill.slice(0, 20), 3, async ({ r }) => {
       await this.lazyTitle(String(r.header.id))
     })
-    const body = top.map((r, i) => {
-      const dshTitle = dshTitleOf(titles[i])
-      const title = dshTitle || this.titles.get(String(r.header.id)) || ''
-      const live = r.live ? '🟢' : '💤'
-      const cwd = r.header.cwd ? `\n   📁 ${r.header.cwd.length > 36 ? `…${r.header.cwd.slice(-35)}` : r.header.cwd}` : ''
-      return `[${i + 1}] ${r.header.id} ${title ? `「${title.slice(0, 30)}」` : ''}${r.header.createdAt ? ` · ${relTime(r.header.createdAt)}` : ''} ${live}${cwd}`
-    }).join('\n\n')
-    return [
-      '',
-      `📋 ${workspace ? `会话（当前工作区 ${workspace}）` : '全部会话'}：${filtered.length} 个${filtered.length > 20 ? `，显示前 20` : ''}${workspace ? `（/sessions all 查看全部）` : ''}`,
-      body,
-      '用 /continue <会话id> 继续某个会话。',
-      '',
-    ].join('\n\n')
+
+    const rowOf = (r: { header: { id: string; createdAt?: number; cwd?: string } }, live: boolean, index: number): string => {
+      const title = dshTitleOf(titles[index]) || this.titles.get(String(r.header.id)) || ''
+      const updated = updates.get(String(r.header.id)) ?? r.header.createdAt ?? 0
+      // 序号 → 标题 → 会话编号 → 更新时间 → 状态
+      return `[${index + 1}] ${title ? `「${title.slice(0, 40)}」` : ''} ${r.header.id}${updated ? ` · ${relTime(updated)}` : ''} ${live ? '🟢' : '💤'}`
+    }
+
+    const lines: string[] = ['', `📋 ${workspace ? `会话（当前工作区 ${workspace}）` : '全部会话'}：${filtered.length} 个${filtered.length > 20 ? `，显示前 20` : ''}${workspace ? `（/sessions all 查看全部）` : ''}`]
+    if (workspace) {
+      // 单工作区：目录放顶部一次，条目不再重复目录
+      top.forEach((r, i) => lines.push(rowOf(r, r.live, i)))
+    } else {
+      // 全部：按工作区分区，先目录再其下会话
+      const groups = new Map<string, Array<{ r: typeof top[number]; i: number }>>()
+      top.forEach((r, i) => {
+        const cwd = r.header.cwd ?? '(未知工作区)'
+        const list = groups.get(cwd) ?? []
+        list.push({ r, i })
+        groups.set(cwd, list)
+      })
+      for (const [cwd, members] of groups) {
+        lines.push('', `📁 ${cwd}（${members.length} 个会话）`, '')
+        for (const { r, i } of members) lines.push(rowOf(r, r.live, i))
+      }
+    }
+    lines.push('', '用 /continue <会话id> 继续某个会话。', '')
+    return lines.join('\n')
+  }
+
+  /** 会话最后更新时间：网关注入缓存 → 日志文件 mtime → createdAt。 */
+  private async updateTimeOf(record: { header: { id: string; createdAt?: number; cwd?: string } }): Promise<number> {
+    const id = String(record.header.id)
+    const cached = this.lastActivity.get(id)
+    if (cached) return cached
+    try {
+      const logPath = sessionLogPathOf(record.header.cwd, id, this.sessionsRoot)
+      if (logPath) {
+        const st = await stat(logPath)
+        return st.mtimeMs
+      }
+    } catch { /* 无文件则用 createdAt */ }
+    return record.header.createdAt ?? 0
   }
 
   // ── 审批桥 ────────────────────────────────────────────────
@@ -818,4 +858,12 @@ async function runBatched<T>(items: T[], batchSize: number, fn: (item: T) => Pro
     const batch = items.slice(i, i + batchSize)
     await Promise.all(batch.map((item) => fn(item).catch(() => undefined)))
   }
+}
+
+/** 会话日志文件路径：$DSH_HOME/sessions/<工作区编码>/<会话id编码>/session.jsonl.zstd。 */
+function sessionLogPathOf(cwd: string | undefined, id: string, sessionsRoot: string): string | undefined {
+  if (!cwd) return undefined
+  const wsDir = `--${cwd.replace(/^\/+|\/+$/g, '').replace(/\//g, '-')}--`
+  const idDir = encodeURIComponent(id).replace(/%/g, '~')
+  return join(sessionsRoot, wsDir, idDir, 'session.jsonl.zstd')
 }
