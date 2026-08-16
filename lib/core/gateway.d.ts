@@ -17,12 +17,19 @@ export interface GatewayOptions {
     log: (line: string) => void;
     /** 未授权用户触达时回调（如登记待授权请求）。返回给用户的提示文案（默认引导去设置批准）。 */
     onUnauthorized?: (channelId: string, msg: ImMessage) => string;
+    /** 每聊天工作区偏好的持久化（/workspace 命令）。 */
+    workspaceStore?: {
+        load(): Array<[string, string]>;
+        save(entries: Array<[string, string]>): void;
+    };
 }
 export declare class ImGateway {
     private readonly ctx;
     private readonly config;
     private readonly stateDir;
     private readonly logLine;
+    /** 工作区偏好持久化（/workspace 命令）。 */
+    private readonly workspaceStore;
     private readonly channels;
     private readonly router;
     private readonly broker;
@@ -60,6 +67,12 @@ export declare class ImGateway {
     }>;
     private authorized;
     private handleCommand;
+    /** 持久化每聊天工作区偏好。 */
+    private persistWorkspaces;
+    /** 列出所有工作区（按会话数排序）。 */
+    private listWorkspaces;
+    /** 列出会话（可按工作区过滤）。 */
+    private listSessions;
     private handleApprovalRequest;
     private answerApproval;
     private handleSessionEvent;

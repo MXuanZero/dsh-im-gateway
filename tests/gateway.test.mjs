@@ -22,7 +22,7 @@ function makeCtx() {
       create: async (opts) => {
         const agent = {
           id: String(opts.sessionId),
-          session: { id: opts.sessionId },
+          session: { id: opts.sessionId, header: { cwd: opts.meta?.cwd } },
           followup: () => {},
           inbox: {},
         }
@@ -33,6 +33,24 @@ function makeCtx() {
         return { agent, dispose: async () => agents.delete(String(opts.sessionId)) }
       },
       get: (id) => agents.get(String(id))?.agent,
+      resume: async (opts) => {
+        const sid = String(opts.resumeSessionId)
+        const agent = {
+          id: sid,
+          session: { id: opts.resumeSessionId, header: { cwd: '/resumed-cwd' } },
+          followup: () => {},
+          inbox: {},
+        }
+        agent.followup = (msg) => {
+          const record = { sessionId: sid, msg }
+          agents.set(sid, { agent, record })
+        }
+        return { agent, dispose: async () => agents.delete(sid) }
+      },
+    },
+    sessionQuery: {
+      listSessions: async () => [],
+      readTitleSnapshots: async () => [],
     },
     _listeners: listeners,
     _agents: agents,
@@ -309,6 +327,101 @@ test('im_send_file 工具：无关联会话时报错', async () => {
   const gw = new ImGateway(ctx, { config: baseConfig, stateDir: '/tmp', log: () => {} })
   const result = await gw.sendFileToChats('/tmp/a.png', undefined, undefined, 'no-such-session')
   assert.equal(result.ok, false)
+  gw.dispose()
+})
+
+test('/workspace 切换工作区：后续新会话使用新 cwd', async () => {
+  const { mkdirSync, rmSync } = await import('node:fs')
+  mkdirSync('/tmp/imgw-ws', { recursive: true })
+  const ctx = makeCtx()
+  const saved = []
+  const gw = new ImGateway(ctx, {
+    config: baseConfig,
+    stateDir: '/tmp',
+    log: () => {},
+    workspaceStore: {
+      load: () => [],
+      save: (entries) => { saved.push(entries) },
+    },
+  })
+  const { channel, sent } = makeChannel()
+  gw.register(channel)
+
+  // 切换工作区
+  await channel.handler({ chatId: 'c1', userId: 'u1', text: '/workspace /tmp/imgw-ws' })
+  assert.ok(sent.some((s) => s.text.includes('/tmp/imgw-ws')), '应返回切换成功')
+  assert.equal(saved.length, 1, '应持久化工作区偏好')
+  assert.equal(saved[0][0][1], '/tmp/imgw-ws')
+
+  // 新会话使用新工作区
+  await channel.handler({ chatId: 'c1', userId: 'u1', text: 'hello!!' })
+  const keys = [...ctx._agents.keys()]
+  const agent = ctx._agents.get(keys[0])
+  assert.equal(agent.agent.session.header.cwd, '/tmp/imgw-ws', '新会话应在新工作区')
+
+  // /status 显示工作区
+  await channel.handler({ chatId: 'c1', userId: 'u1', text: '/status' })
+  assert.ok(sent.some((s) => s.text.includes('/tmp/imgw-ws')))
+
+  gw.dispose()
+  rmSync('/tmp/imgw-ws', { recursive: true, force: true })
+})
+
+test('/workspace 不存在的目录报错', async () => {
+  const ctx = makeCtx()
+  const gw = new ImGateway(ctx, { config: baseConfig, stateDir: '/tmp', log: () => {} })
+  const { channel, sent } = makeChannel()
+  gw.register(channel)
+
+  await channel.handler({ chatId: 'c1', userId: 'u1', text: '/workspace /nonexistent-dir-xyz-123' })
+  assert.ok(sent.some((s) => s.text.includes('目录不存在')))
+
+  gw.dispose()
+})
+
+test('/sessions 列出会话（mock sessionQuery）', async () => {
+  const ctx = makeCtx()
+  ctx.sessionQuery = {
+    listSessions: async () => [
+      { header: { id: 'session-a', createdAt: Date.now() - 60_000, cwd: '/ws1' }, live: true, persisted: true },
+      { header: { id: 'session-b', createdAt: Date.now() - 3600_000, cwd: '/ws2' }, live: false, persisted: true },
+    ],
+    readTitleSnapshots: async () => [
+      { ok: true, value: { title: '我的任务' } },
+      { ok: true, value: { title: '' } },
+    ],
+  }
+  const gw = new ImGateway(ctx, { config: baseConfig, stateDir: '/tmp', log: () => {} })
+  const { channel, sent } = makeChannel()
+  gw.register(channel)
+
+  await channel.handler({ chatId: 'c1', userId: 'u1', text: '/sessions all' })
+  const reply = sent.find((s) => s.text.includes('📋 会话'))
+  assert.ok(reply, '应返回会话列表')
+  assert.ok(reply.text.includes('session-a'), '应包含会话 id')
+  assert.ok(reply.text.includes('我的任务'), '应包含标题')
+  assert.ok(reply.text.includes('/ws1'), '应包含工作区')
+
+  gw.dispose()
+})
+
+test('/continue 继续已有会话（resume）', async () => {
+  const ctx = makeCtx()
+  const gw = new ImGateway(ctx, { config: baseConfig, stateDir: '/tmp', log: () => {} })
+  const { channel, sent } = makeChannel()
+  gw.register(channel)
+
+  await channel.handler({ chatId: 'c1', userId: 'u1', text: '/continue session-abc-123' })
+  const reply = sent.find((s) => s.text.includes('已继续会话'))
+  assert.ok(reply, '应返回继续成功')
+  assert.ok(reply.text.includes('session-abc-123'))
+
+  // 之后的消息进入被继续的会话
+  await channel.handler({ chatId: 'c1', userId: 'u1', text: '继续工作!!' })
+  const agent = ctx._agents.get('session-abc-123')
+  assert.ok(agent, '应使用 resumed 会话')
+  assert.equal(agent.record.msg.content[0].text, '继续工作')
+
   gw.dispose()
 })
 

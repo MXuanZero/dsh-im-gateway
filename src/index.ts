@@ -31,13 +31,13 @@ import type { ImGatewayConfig } from './core/types.js'
 import { ChannelManager } from './manager.js'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 
 export const name = 'dsh-im-gateway'
 // agents：创建/查找 agent 会话；jobs：后台任务（扫码/轮询状态对 Web UI 可见）；
 // tools：注册 im_send_file（agent → IM 发文件）；attachments：图片入站转 image block；
 // webServer：提供设置面板调用的 HTTP API
-export const inject = ['agents', 'jobs', 'tools', 'attachments', 'webServer']
+export const inject = ['agents', 'jobs', 'tools', 'attachments', 'webServer', 'sessionQuery']
 
 /** 网关部署配置。 */
 export const Config: Schema<ImGatewayConfig> = Schema.object({
@@ -82,7 +82,28 @@ export function apply(ctx: Context, config: ImGatewayConfig): void {
     } catch { /* 日志失败不影响运行 */ }
   }
 
-  const gateway = new ImGateway(ctx, { config, stateDir, log })
+  // 每聊天工作区偏好持久化（/workspace 命令）
+  const workspaceFile = join(stateDir, 'workspaces.json')
+  const workspaceStore = {
+    load: (): Array<[string, string]> => {
+      try {
+        const parsed = JSON.parse(readFileSync(workspaceFile, 'utf8')) as Array<[string, string]>
+        return Array.isArray(parsed) ? parsed : []
+      } catch {
+        return []
+      }
+    },
+    save: (entries: Array<[string, string]>): void => {
+      try {
+        mkdirSync(stateDir, { recursive: true })
+        writeFileSync(workspaceFile, JSON.stringify(entries, null, 2))
+      } catch (err) {
+        log(`[manager] 工作区状态落盘失败: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    },
+  }
+
+  const gateway = new ImGateway(ctx, { config, stateDir, log, workspaceStore })
   const manager = new ChannelManager(ctx, { config, stateDir, log, gateway })
   // 未授权用户 → 登记待授权请求（设置面板可一键批准，无需手动找用户 ID）
   gateway.setUnauthorizedHandler((channelId, msg) => {

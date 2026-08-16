@@ -22,6 +22,8 @@ export interface ChatEntry {
   handle?: AgentHandle
   /** bound 模式的绑定者 userId（用于鉴权）。 */
   boundBy?: string
+  /** 会话所属工作区（创建时 cwd）。 */
+  workspace?: string
 }
 
 export interface RouterOptions {
@@ -38,9 +40,35 @@ export class SessionRouter {
   /** sessionId → 绑定它的 chat 集合（bound 模式可多 chat 绑同一会话）。 */
   private readonly bySession = new Map<string, Set<ChatEntry>>()
 
+  /** 每 chat 的工作区偏好（/workspace 设置，持久化由网关层负责）。 */
+  private readonly workspaces = new Map<string, string>()
+
   constructor(ctx: Context, options: RouterOptions) {
     this.ctx = ctx
     this.options = options
+  }
+
+  /** 恢复持久化的工作区偏好（启动时由网关层灌入）。 */
+  restoreWorkspaces(entries: Array<[string, string]>): void {
+    for (const [key, path] of entries) this.workspaces.set(key, path)
+  }
+
+  /** 当前 chat 的工作区偏好（无则全局 cwd）。 */
+  workspaceOf(channelId: string, chatId: string): string | undefined {
+    return this.workspaces.get(`${channelId}:${chatId}`)
+  }
+
+  /** 设置 chat 的工作区偏好，返回旧值。 */
+  setWorkspace(channelId: string, chatId: string, path: string): string | undefined {
+    const key = `${channelId}:${chatId}`
+    const old = this.workspaces.get(key)
+    this.workspaces.set(key, path)
+    return old
+  }
+
+  /** 全部工作区偏好（持久化用）。 */
+  workspaceEntries(): Array<[string, string]> {
+    return [...this.workspaces.entries()]
   }
 
   /** 取 chat 条目；不存在时返回 undefined（调用方决定是否创建）。 */
@@ -48,7 +76,7 @@ export class SessionRouter {
     return this.entries.get(`${channelId}:${chatId}`)
   }
 
-  /** per-chat 模式：取或建（自动创建 agent 会话）。 */
+  /** per-chat 模式：取或建（自动创建 agent 会话；优先 chat 的工作区偏好）。 */
   async getOrCreate(channelId: string, chatId: string): Promise<ChatEntry> {
     const key = `${channelId}:${chatId}`
     const existing = this.entries.get(key)
@@ -56,19 +84,55 @@ export class SessionRouter {
     return this.create(channelId, chatId)
   }
 
-  /** 创建新会话（per-chat）。 */
+  /** 创建新会话（per-chat；cwd 优先 chat 工作区偏好）。 */
   async create(channelId: string, chatId: string): Promise<ChatEntry> {
     const key = `${channelId}:${chatId}`
     const sessionId = SessionId(`im:${channelId}:${chatId}:${Date.now()}`)
+    const cwd = this.workspaces.get(key) ?? this.options.cwd
     const handle = await this.ctx.agents.create({
       sessionId,
-      meta: { cwd: this.options.cwd },
+      meta: { cwd },
       agentOptions: { provider: this.options.provider, model: this.options.model },
     })
-    const entry: ChatEntry = { channelId, chatId, key, sessionId: String(sessionId), handle }
+    const entry: ChatEntry = { channelId, chatId, key, sessionId: String(sessionId), handle, workspace: cwd }
     this.entries.set(key, entry)
     this.index(entry)
     return entry
+  }
+
+  /**
+   * 继续已有会话（per-chat）：优先复用本进程 live agent，否则 resume 持久化会话。
+   * 成功时把 chat 条目切换到该会话。
+   */
+  async continueSession(channelId: string, chatId: string, sessionId: string): Promise<{ ok: boolean; error?: string; workspace?: string }> {
+    const key = `${channelId}:${chatId}`
+    const existing = this.entries.get(key)
+    // 本进程已有 live agent（其他 chat 正在用或本 chat 的旧条目）
+    let liveAgent = this.ctx.agents.get(SessionId(sessionId))
+    if (!liveAgent) {
+      try {
+        const handle = await this.ctx.agents.resume({ resumeSessionId: SessionId(sessionId) })
+        if (existing?.handle) {
+          this.unindex(existing)
+          await existing.handle.dispose().catch(() => undefined)
+        }
+        const entry: ChatEntry = { channelId, chatId, key, sessionId, handle }
+        this.entries.set(key, entry)
+        this.index(entry)
+        return { ok: true, workspace: sessionCwdOf(handle.agent) }
+      } catch (err) {
+        return { ok: false, error: `继续会话失败：${err instanceof Error ? err.message : String(err)}` }
+      }
+    }
+    // live agent 复用：本 chat 条目指向它（释放旧 handle）
+    if (existing?.handle && existing.sessionId !== sessionId) {
+      this.unindex(existing)
+      await existing.handle.dispose().catch(() => undefined)
+    }
+    const entry: ChatEntry = { channelId, chatId, key, sessionId, boundBy: undefined }
+    this.entries.set(key, entry)
+    this.index(entry)
+    return { ok: true, workspace: sessionCwdOf(liveAgent) }
   }
 
   /** `/new`：轮换新会话。 */
@@ -145,4 +209,9 @@ export class SessionRouter {
       if (set.size === 0) this.bySession.delete(entry.sessionId)
     }
   }
+}
+
+/** 从 agent 的会话 header 取工作目录（可能没有）。 */
+function sessionCwdOf(agent: { session: { header?: { cwd?: string } } }): string | undefined {
+  return agent.session.header?.cwd
 }
