@@ -500,10 +500,22 @@ export class ImGateway {
         return HELP_TEXT
       case '/status': {
         const entry = this.router.get(channelId, chatId)
+        let sessionLabel = '（无）'
+        if (entry) {
+          // 标题在前：readTitleSnapshots（dsh 标题）→ 网关缓存，不懒读保持快速
+          let title = this.titles.get(entry.sessionId) ?? ''
+          if (!title) {
+            try {
+              const obs = await this.ctx.sessionQuery.readTitleSnapshots([SessionId(entry.sessionId)])
+              title = dshTitleOf((obs as unknown as Array<{ status: string; value?: { title?: { title?: string } } }>)[0])
+            } catch { /* 忽略 */ }
+          }
+          sessionLabel = title ? `「${title.slice(0, 40)}」 ${entry.sessionId}` : entry.sessionId
+        }
         const lines = [
           `会话模式：${this.config.sessionMode}`,
           `当前工作区：${this.router.workspaceOf(channelId, chatId) ?? this.config.cwd}`,
-          entry ? `绑定会话：${entry.sessionId}` : '当前会话：（无）',
+          `绑定会话：${sessionLabel}`,
           `待批准：${this.broker.size > 0 ? `${this.broker.size} 个` : '无'}`,
         ]
         return lines.join('\n')
