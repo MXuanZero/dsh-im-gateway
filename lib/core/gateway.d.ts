@@ -97,6 +97,8 @@ export declare class ImGateway {
         detail: string;
     }>;
     private authorized;
+    /** 恢复该 chat 上次绑定的会话（命令也触发，使 /status 显示真实状态；失败静默）。 */
+    private ensureChatRestored;
     private handleCommand;
     /** 持久化每聊天工作区偏好。 */
     private persistWorkspaces;

@@ -62,6 +62,8 @@ export declare class SessionRouter {
     getOrCreate(channelId: string, chatId: string): Promise<ChatEntry>;
     /** 记录 chat 当前绑定的会话（持久化，重启后恢复）。 */
     recordChatSession(channelId: string, chatId: string, sessionId: string): void;
+    /** 该 chat 上次绑定的会话（无则 undefined；供命令路径恢复用）。 */
+    lastSessionOf(channelId: string, chatId: string): string | undefined;
     /** 创建新会话（per-chat；cwd 优先 chat 工作区偏好）。 */
     create(channelId: string, chatId: string): Promise<ChatEntry>;
     /**

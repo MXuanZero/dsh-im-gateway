@@ -210,6 +210,8 @@ export class ImGateway {
     const channel = this.channels.get(channelId)
     if (!channel) return
     try {
+      // 0. 恢复该 chat 的上次会话绑定（命令也会触发，使 /status 显示真实状态）
+      await this.ensureChatRestored(channelId, msg.chatId)
       // 1. 命令（不经合并窗口）
       if (msg.text.startsWith('/')) {
         const reply = await this.handleCommand(channel, msg)
@@ -476,6 +478,17 @@ export class ImGateway {
   }
 
   // ── 命令 ──────────────────────────────────────────────────
+
+  /** 恢复该 chat 上次绑定的会话（命令也触发，使 /status 显示真实状态；失败静默）。 */
+  private async ensureChatRestored(channelId: string, chatId: string): Promise<void> {
+    if (this.router.get(channelId, chatId)) return
+    const last = this.router.lastSessionOf(channelId, chatId)
+    if (!last) return
+    const restored = await this.router.continueSession(channelId, chatId, last)
+    if (restored.ok) {
+      this.logLine(`[${channelId}] 会话自动恢复：${last}`)
+    }
+  }
 
   private async handleCommand(channel: ChannelAdapter, msg: ImMessage): Promise<string | undefined> {
     const [rawCmd, ...args] = msg.text.trim().split(/\s+/)

@@ -111,6 +111,11 @@ export class SessionRouter {
     this.options.chatSessionStore?.save(Object.fromEntries(this.chatSessions))
   }
 
+  /** 该 chat 上次绑定的会话（无则 undefined；供命令路径恢复用）。 */
+  lastSessionOf(channelId: string, chatId: string): string | undefined {
+    return this.chatSessions.get(`${channelId}:${chatId}`)
+  }
+
   /** 创建新会话（per-chat；cwd 优先 chat 工作区偏好）。 */
   async create(channelId: string, chatId: string): Promise<ChatEntry> {
     const key = `${channelId}:${chatId}`

@@ -587,3 +587,27 @@ test('重启后自动恢复上次会话（chatSessionStore）', async () => {
 
   gw.dispose()
 })
+
+test('重启后 /status 命令也触发会话恢复', async () => {
+  const ctx = makeCtx()
+  const gw = new ImGateway(ctx, {
+    config: baseConfig,
+    stateDir: '/tmp',
+    log: () => {},
+    chatSessionStore: {
+      load: () => ({ 'test:c1': 'session-prev-9' }),
+      save: () => {},
+    },
+  })
+  const { channel, sent } = makeChannel()
+  gw.register(channel)
+
+  // 重启后第一条是命令：应先恢复绑定，/status 显示真实会话
+  await channel.handler({ chatId: 'c1', userId: 'u1', text: '/status' })
+  assert.equal(ctx._resumeOpts?.resumeSessionId, 'session-prev-9', '命令也应触发恢复')
+  const reply = sent.find((s) => s.text.includes('绑定会话'))
+  assert.ok(reply, '/status 应有回复')
+  assert.ok(reply.text.includes('session-prev-9'), '/status 应显示恢复的会话')
+
+  gw.dispose()
+})
