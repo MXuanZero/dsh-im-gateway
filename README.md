@@ -58,7 +58,7 @@
 
 ## ✨ Highlights
 
-- 🌐 **24+ 渠道全覆盖** — 对齐 OpenClaw 的渠道面：微信、飞书、Telegram、Discord、Slack、QQ、WhatsApp、Signal、Teams、LINE、Matrix、Mattermost、IRC、Twitch、Nostr、Zalo、iMessage、内置 WebChat 网页……
+- 🌐 **23+ 渠道全覆盖** — 对齐 OpenClaw 的渠道面：微信、飞书、Telegram、Discord、Slack、QQ、WhatsApp、Signal、Teams、LINE、Matrix、Mattermost、IRC、Twitch、Nostr、Zalo、iMessage……
 - 🔁 **每聊天一个 agent 会话** — 群里聊天 = 驱动 agent，回复实时回推；`/new` 换新会话，`/bind` 绑定现有会话
 - ✅ **远程审批桥** — agent 请求工具批准时推送到 IM，聊天里回一句「批准 / 拒绝」即可，超时自动转回本机批准体系
 - 📱 **手机多段输入合并** — `..` 表示还有后续，`!!` 立即提交，裸文本 5 秒合并窗口，崩溃后自动恢复
@@ -97,7 +97,6 @@ agent 回复 ← 网关(按渠道分片) ← session/event(assistant/message) �
 
 | 渠道 | 状态 | 接收方式 | 需要 |
 |---|---|---|---|
-| **WebChat**（内置网页） | ✅ 完整 | 本地 HTTP + SSE | 无（零账号！） |
 | **Telegram** | ✅ 完整 | Bot API 长轮询 | @BotFather token |
 | **Discord** | ✅ 完整 | Gateway WebSocket | Bot token |
 | **Slack** | ✅ 完整 | Socket Mode | xoxb- + xapp- token |
@@ -140,7 +139,6 @@ dsh web    # 重启 dsh（安装插件后需要重启一次）
 
 - **微信 / WhatsApp**：点「连接（扫码）」→ 页面直接弹出**二维码**，手机扫码确认即连 ✅
 - **飞书 / Telegram / QQ 机器人 / Discord / Slack …**：点「填写凭据」→ 按提示粘贴 token → 「保存并连接」✅
-- **WebChat 网页**：点「一键开启」→ 浏览器打开给出的地址，直接和 agent 对话 ✅
 
 连接后无需重启，状态实时显示（等待扫码 / 已连接 / 异常）。**重启 dsh 后所有已配置渠道自动重连**（微信登录态已持久化，无需重复扫码）。
 
@@ -219,7 +217,6 @@ agent 回复实时回推；需要批准时在聊天里回「批准 / 拒绝」�
 | imessage | `enabled` + `imsgPath` | `DSH_IMSG_PATH` |
 | wechat | `enabled: true` | — （iLink 扫码） |
 | whatsapp | `enabled: true` | — （Baileys 扫码） |
-| webchat | `enabled: true` + `port` | — |
 
 ## 🔐 Security
 

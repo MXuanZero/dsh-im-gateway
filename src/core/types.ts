@@ -109,7 +109,6 @@ export interface ImGatewayConfig {
     yuanbao?: ChannelConfig
     imessage?: ChannelConfig & { imsgPath?: string }
     voice?: ChannelConfig
-    webchat?: ChannelConfig & { port?: number; token?: string }
   }
   /** 会话模式：per-chat（每聊天一个 agent 会话，默认）| bound（绑定现有会话）。 */
   sessionMode: 'per-chat' | 'bound'

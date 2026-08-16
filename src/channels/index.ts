@@ -25,7 +25,6 @@ import { createNextcloudChannel } from './nextcloud.js'
 import { createSynologyChannel } from './synology.js'
 import { createZaloChannel } from './zalo.js'
 import { createIMessageChannel } from './imessage.js'
-import { createWebChatChannel } from './webchat.js'
 import { createTlonChannel, createYuanbaoChannel, createVoiceChannel } from './stubs.js'
 
 export type ChannelLog = (line: string) => void
@@ -38,7 +37,6 @@ export const CHANNEL_IDS = [
   'qqbot',
   'discord',
   'slack',
-  'webchat',
   'whatsapp',
   'signal',
   'msteams',
@@ -88,7 +86,6 @@ export const CHANNEL_META: Record<ChannelId, ChannelMeta> = {
   qqbot: { label: 'QQ 机器人', emoji: '🐧', needs: ['AppID', 'AppSecret'], fields: [{ key: 'appId', label: 'AppID' }, { key: 'appSecret', label: 'AppSecret', secret: true }], hint: 'QQ 开放平台创建机器人（官方 API）', kind: 'credentials' },
   discord: { label: 'Discord', emoji: '🎮', needs: ['Bot Token'], fields: [{ key: 'token', label: 'Bot Token', secret: true }], hint: 'Discord Developer Portal 创建应用拿 token', kind: 'credentials' },
   slack: { label: 'Slack', emoji: '💼', needs: ['Bot Token', 'App Token'], fields: [{ key: 'token', label: 'Bot Token (xoxb-)', secret: true }, { key: 'appToken', label: 'App Token (xapp-)', secret: true }], hint: 'Socket Mode 需要 xoxb- 和 xapp- 两个 token', kind: 'credentials' },
-  webchat: { label: 'WebChat 网页', emoji: '🌐', needs: [], fields: [], hint: '内置网页聊天室，零账号，浏览器打开即用', kind: 'simple' },
   whatsapp: { label: 'WhatsApp', emoji: '🟢', needs: [], fields: [], hint: '扫码配对（需安装 baileys 依赖）', kind: 'qr' },
   signal: { label: 'Signal', emoji: '🔒', needs: ['手机号', 'signal-cli'], fields: [{ key: 'phone', label: '本机号码（+86…）' }], hint: '需本机安装 signal-cli 并注册号码', kind: 'credentials' },
   msteams: { label: 'Microsoft Teams', emoji: '🏢', needs: ['App ID', 'App Password'], fields: [{ key: 'appId', label: 'App ID' }, { key: 'appPassword', label: 'App Password', secret: true }], hint: '实验性：需 Azure Bot Framework 注册', kind: 'credentials' },
@@ -131,7 +128,6 @@ export function createChannel(id: string, config: Record<string, unknown>, log: 
     case 'synology': return createSynologyChannel(config, log)
     case 'zalo': return createZaloChannel(config, log)
     case 'imessage': return createIMessageChannel(config, log)
-    case 'webchat': return createWebChatChannel(config, log)
     case 'tlon': return createTlonChannel(config, log)
     case 'yuanbao': return createYuanbaoChannel(config, log)
     case 'voice': return createVoiceChannel(config, log)

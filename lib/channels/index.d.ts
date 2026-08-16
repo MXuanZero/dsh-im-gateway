@@ -11,7 +11,7 @@ import { createFeishuChannel } from './feishu.js';
 import { createWechatChannel } from './wechat.js';
 export type ChannelLog = (line: string) => void;
 /** 渠道 id 列表（展示顺序即推荐顺序）。 */
-export declare const CHANNEL_IDS: readonly ["wechat", "feishu", "telegram", "qqbot", "discord", "slack", "webchat", "whatsapp", "signal", "msteams", "line", "matrix", "mattermost", "googlechat", "irc", "twitch", "nostr", "nextcloud", "synology", "zalo", "imessage", "tlon", "yuanbao", "voice"];
+export declare const CHANNEL_IDS: readonly ["wechat", "feishu", "telegram", "qqbot", "discord", "slack", "whatsapp", "signal", "msteams", "line", "matrix", "mattermost", "googlechat", "irc", "twitch", "nostr", "nextcloud", "synology", "zalo", "imessage", "tlon", "yuanbao", "voice"];
 export type ChannelId = (typeof CHANNEL_IDS)[number];
 /** 渠道展示元数据（UI 面板用）。 */
 export interface ChannelField {
