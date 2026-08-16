@@ -395,12 +395,19 @@ test('/sessions 列出会话（mock sessionQuery）', async () => {
   const { channel, sent } = makeChannel()
   gw.register(channel)
 
-  await channel.handler({ chatId: 'c1', userId: 'u1', text: '/sessions all' })
-  const reply = sent.find((s) => s.text.includes('📋 会话'))
-  assert.ok(reply, '应返回会话列表')
+  await channel.handler({ chatId: 'c1', userId: 'u1', text: '/sessions' })
+  const reply = sent.find((s) => s.text.includes('📋 全部会话'))
+  assert.ok(reply, '应返回全部会话列表（默认与 Web 一致）')
   assert.ok(reply.text.includes('session-a'), '应包含会话 id')
   assert.ok(reply.text.includes('我的任务'), '应包含标题')
   assert.ok(reply.text.includes('/ws1'), '应包含工作区')
+
+  // 按工作区过滤
+  await channel.handler({ chatId: 'c1', userId: 'u1', text: '/sessions /ws2' })
+  const filtered = sent.find((s) => s.text.includes('📋 会话（/ws2）'))
+  assert.ok(filtered, '应按工作区过滤')
+  assert.ok(filtered.text.includes('session-b'), '应包含该工作区会话')
+  assert.ok(!filtered.text.includes('session-a'), '不应包含其他工作区会话')
 
   gw.dispose()
 })
