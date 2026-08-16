@@ -37,7 +37,7 @@ const PLUGIN_NAME = 'dsh-im-gateway'
 const HELP_TEXT = [
   '🤖 dsh-im-gateway 可用命令：',
   '/help — 本帮助',
-  '/status — 当前工作区 / 会话 / 待批准',
+  '/status — 查询当前会话（会话 id / 工作区 / 待批准）',
   '/new — 开启全新会话（per-chat 模式）',
   '/clear — 同 /new',
   '/workspaces — 列出所有工作区',
