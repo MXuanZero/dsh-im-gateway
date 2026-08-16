@@ -7,7 +7,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { AgentHandle, AgentSetup } from '@deepseek-ai/dsh-agent'
+import type { Agent, AgentHandle, AgentSetup } from '@deepseek-ai/dsh-agent'
 import { SessionId } from '@deepseek-ai/dsh-session'
 // dsh-agent-presets 模块增强（ctx.agentPresets：把 agent 挂入 preset，否则无核心工具）
 import type {} from '@deepseek-ai/dsh-agent-presets'
@@ -22,6 +22,8 @@ export interface ChatEntry {
   sessionId: string
   /** per-chat 模式持有 handle；bound 模式为 undefined。 */
   handle?: AgentHandle
+  /** 复用的 live agent（非本网关创建、不能 dispose）；注入消息时优先于 handle。 */
+  agent?: Agent
   /** bound 模式的绑定者 userId（用于鉴权）。 */
   boundBy?: string
   /** 会话所属工作区（创建时 cwd）。 */
@@ -160,12 +162,12 @@ export class SessionRouter {
         return { ok: false, error: `继续会话失败：${err instanceof Error ? err.message : String(err)}` }
       }
     }
-    // live agent 复用：本 chat 条目指向它（释放旧 handle）
+    // live agent 复用：本 chat 条目指向它（释放旧 handle；agent 引用供注入，不 dispose）
     if (existing?.handle && existing.sessionId !== sessionId) {
       this.unindex(existing)
       await existing.handle.dispose().catch(() => undefined)
     }
-    const entry: ChatEntry = { channelId, chatId, key, sessionId, boundBy: undefined }
+    const entry: ChatEntry = { channelId, chatId, key, sessionId, agent: liveAgent, boundBy: undefined }
     this.entries.set(key, entry)
     this.index(entry)
     return { ok: true, workspace: sessionCwdOf(liveAgent) }

@@ -451,6 +451,37 @@ test('/continue 继续已有会话（resume）', async () => {
   gw.dispose()
 })
 
+test('/continue 复用到 live agent（Web 正打开的会话）时消息仍能注入', async () => {
+  const ctx = makeCtx()
+  const gw = new ImGateway(ctx, { config: baseConfig, stateDir: '/tmp', log: () => {} })
+  const { channel, sent } = makeChannel()
+  gw.register(channel)
+
+  // 模拟：Web 已持有该会话的 live agent
+  const liveAgent = {
+    id: 'session-live-1',
+    session: { id: 'session-live-1', header: { cwd: '/ws-live' } },
+    followup: () => {},
+    inbox: {},
+  }
+  const records = []
+  liveAgent.followup = (msg) => { records.push(msg) }
+  ctx.agents.get = (id) => (String(id) === 'session-live-1' ? liveAgent : undefined)
+
+  // continue 应复用（不 resume）
+  await channel.handler({ chatId: 'c1', userId: 'u1', text: '/continue session-live-1' })
+  const reply = sent.find((s) => s.text.includes('已继续会话'))
+  assert.ok(reply, '应返回继续成功')
+  assert.equal(ctx._resumeOpts, undefined, 'live agent 存在时不应 resume')
+
+  // 消息必须注入到 live agent
+  await channel.handler({ chatId: 'c1', userId: 'u1', text: '还记得我们之前聊了什么吗!!' })
+  assert.equal(records.length, 1, '消息应注入 live agent')
+  assert.equal(records[0].content[0].text, '还记得我们之前聊了什么吗')
+
+  gw.dispose()
+})
+
 test('approval/request 推送到渠道并远程批准', async () => {
   const ctx = makeCtx()
   const gw = new ImGateway(ctx, { config: baseConfig, stateDir: '/tmp', log: () => {} })

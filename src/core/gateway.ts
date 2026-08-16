@@ -311,7 +311,12 @@ export class ImGateway {
     }
 
     const entry = await this.router.getOrCreate(channelId, chatId)
-    entry.handle?.agent.followup(message)
+    // 优先用自建 handle 的 agent；复用的 live agent 从 entry.agent 取
+    const target = entry.handle?.agent ?? entry.agent
+    if (!target) {
+      return `会话 ${entry.sessionId} 当前没有运行中的 agent，无法注入。`
+    }
+    target.followup(message)
     this.logLine(`[${channelId}] 消息注入会话 ${entry.sessionId}`)
     this.recordTitleIfNeeded(entry.sessionId, blocks)
     this.recordActivity(entry.sessionId)

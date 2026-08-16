@@ -6,7 +6,7 @@
  * @module dsh-im-gateway/core/router
  */
 import type { Context } from '@deepseek-ai/cordis';
-import type { AgentHandle } from '@deepseek-ai/dsh-agent';
+import type { Agent, AgentHandle } from '@deepseek-ai/dsh-agent';
 /** 一个 chat 的会话条目。 */
 export interface ChatEntry {
     readonly channelId: string;
@@ -17,6 +17,8 @@ export interface ChatEntry {
     sessionId: string;
     /** per-chat 模式持有 handle；bound 模式为 undefined。 */
     handle?: AgentHandle;
+    /** 复用的 live agent（非本网关创建、不能 dispose）；注入消息时优先于 handle。 */
+    agent?: Agent;
     /** bound 模式的绑定者 userId（用于鉴权）。 */
     boundBy?: string;
     /** 会话所属工作区（创建时 cwd）。 */
