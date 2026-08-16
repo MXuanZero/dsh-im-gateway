@@ -292,9 +292,11 @@ export class ImGateway {
 
   /** 把 content blocks 注入目标 chat 的 agent 会话，返回给用户的可选回执。 */
   private async injectBlocks(channelId: string, chatId: string, blocks: ContentBlock[]): Promise<string> {
+    // source 必须为 user：Web 端只把 source.kind==='user' 的消息渲染为用户气泡，
+    // plugin 来源会被显示为 context（看起来像"没同步"）
     const message = createUserMessage({
       content: blocks,
-      source: { kind: 'plugin', plugin: PLUGIN_NAME, form: 'relay' },
+      source: { kind: 'user' },
     })
     if (this.config.sessionMode === 'bound') {
       const entry = this.router.get(channelId, chatId)

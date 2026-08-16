@@ -110,7 +110,8 @@ test('消息注入 per-chat 会话', async () => {
   assert.equal(keys.length, 1, '应创建 agent')
   const agent = ctx._agents.get(keys[0])
   assert.ok(agent.record.msg.content[0].text, '你好')
-  assert.equal(agent.record.msg.source.kind, 'plugin')
+  // source 必须是 user：Web 端只把 user 来源渲染为用户气泡
+  assert.equal(agent.record.msg.source.kind, 'user')
 
   gw.dispose()
 })
