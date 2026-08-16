@@ -103,7 +103,28 @@ export function apply(ctx: Context, config: ImGatewayConfig): void {
     },
   }
 
-  const gateway = new ImGateway(ctx, { config, stateDir, log, workspaceStore })
+  // 会话标题缓存持久化（/sessions 列表兜底显示）
+  const titleFile = join(stateDir, 'session-titles.json')
+  const titleStore = {
+    load: (): Record<string, string> => {
+      try {
+        const parsed = JSON.parse(readFileSync(titleFile, 'utf8')) as Record<string, string>
+        return parsed && typeof parsed === 'object' ? parsed : {}
+      } catch {
+        return {}
+      }
+    },
+    save: (titles: Record<string, string>): void => {
+      try {
+        mkdirSync(stateDir, { recursive: true })
+        writeFileSync(titleFile, JSON.stringify(titles, null, 2))
+      } catch (err) {
+        log(`[manager] 标题缓存落盘失败: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    },
+  }
+
+  const gateway = new ImGateway(ctx, { config, stateDir, log, workspaceStore, titleStore })
   const manager = new ChannelManager(ctx, { config, stateDir, log, gateway })
   // 未授权用户 → 登记待授权请求（设置面板可一键批准，无需手动找用户 ID）
   gateway.setUnauthorizedHandler((channelId, msg) => {

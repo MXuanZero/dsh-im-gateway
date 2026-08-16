@@ -22,6 +22,11 @@ export interface GatewayOptions {
         load(): Array<[string, string]>;
         save(entries: Array<[string, string]>): void;
     };
+    /** 会话标题缓存持久化（/sessions 列表用；dsh 标题缺失时的兜底）。 */
+    titleStore?: {
+        load(): Record<string, string>;
+        save(titles: Record<string, string>): void;
+    };
 }
 export declare class ImGateway {
     private readonly ctx;
@@ -30,6 +35,9 @@ export declare class ImGateway {
     private readonly logLine;
     /** 工作区偏好持久化（/workspace 命令）。 */
     private readonly workspaceStore;
+    /** 会话标题缓存（sessionId → 标题；dsh 标题缺失时兜底）。 */
+    private readonly titleStore;
+    private readonly titles;
     private readonly channels;
     private readonly router;
     private readonly broker;
@@ -57,6 +65,10 @@ export declare class ImGateway {
     private injectText;
     /** 把 content blocks 注入目标 chat 的 agent 会话，返回给用户的可选回执。 */
     private injectBlocks;
+    /** 会话首次收到用户消息时记录标题（dsh 标题缺失时的兜底显示）。 */
+    private recordTitleIfNeeded;
+    /** 从会话日志懒读取标题（/sessions 列表时对无标题会话补全，结果缓存）。 */
+    private lazyTitle;
     private ackFor;
     /** 注册 im_send_file 工具：agent 把工作区文件发给当前 IM 聊天。 */
     private registerSendMediaTool;

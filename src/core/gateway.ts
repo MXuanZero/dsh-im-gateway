@@ -71,6 +71,11 @@ export interface GatewayOptions {
     load(): Array<[string, string]>
     save(entries: Array<[string, string]>): void
   }
+  /** 会话标题缓存持久化（/sessions 列表用；dsh 标题缺失时的兜底）。 */
+  titleStore?: {
+    load(): Record<string, string>
+    save(titles: Record<string, string>): void
+  }
 }
 
 export class ImGateway {
@@ -80,6 +85,9 @@ export class ImGateway {
   private readonly logLine: (line: string) => void
   /** 工作区偏好持久化（/workspace 命令）。 */
   private readonly workspaceStore: GatewayOptions['workspaceStore']
+  /** 会话标题缓存（sessionId → 标题；dsh 标题缺失时兜底）。 */
+  private readonly titleStore: GatewayOptions['titleStore']
+  private readonly titles = new Map<string, string>()
   private readonly channels = new Map<string, ChannelAdapter>()
   private readonly router: SessionRouter
   private readonly broker = new ApprovalBroker()
@@ -99,6 +107,8 @@ export class ImGateway {
     this.logLine = options.log
     this.unauthorizedHandler = options.onUnauthorized
     this.workspaceStore = options.workspaceStore
+    this.titleStore = options.titleStore
+    for (const [sid, title] of Object.entries(options.titleStore?.load() ?? {})) this.titles.set(sid, title)
     this.router = new SessionRouter(ctx, {
       cwd: this.config.cwd,
       provider: this.config.provider,
@@ -292,7 +302,45 @@ export class ImGateway {
     const entry = await this.router.getOrCreate(channelId, chatId)
     entry.handle?.agent.followup(message)
     this.logLine(`[${channelId}] 消息注入会话 ${entry.sessionId}`)
+    this.recordTitleIfNeeded(entry.sessionId, blocks)
     return this.ackFor(blocks)
+  }
+
+  /** 会话首次收到用户消息时记录标题（dsh 标题缺失时的兜底显示）。 */
+  private recordTitleIfNeeded(sessionId: string, blocks: ContentBlock[]): void {
+    if (this.titles.has(sessionId)) return
+    const text = blocks.filter((b) => b.type === 'text').map((b) => (b as { text: string }).text).join('').trim()
+    const title = summarizeTitle(text)
+    if (title) {
+      this.titles.set(sessionId, title)
+      this.titleStore?.save(Object.fromEntries(this.titles))
+    }
+  }
+
+  /** 从会话日志懒读取标题（/sessions 列表时对无标题会话补全，结果缓存）。 */
+  private async lazyTitle(sessionId: string): Promise<string | undefined> {
+    const cached = this.titles.get(sessionId)
+    if (cached !== undefined) return cached
+    const query = this.ctx.sessionQuery
+    if (!query) return undefined
+    try {
+      const snapshot = await query.readSession(SessionId(sessionId))
+      const firstUser = snapshot.events.find((e) => e.type === 'user/message')
+      if (!firstUser) return undefined
+      // user/message 事件的 data 即 UserMessage（{ id, role, content, source }）
+      const data = firstUser.data as { content?: Array<{ type?: string; text?: string }> }
+      const text = (data.content ?? [])
+        .filter((b) => b.type === 'text')
+        .map((b) => b.text ?? '')
+        .join('')
+        .trim()
+      const title = summarizeTitle(text)
+      if (title) {
+        this.titles.set(sessionId, title)
+        this.titleStore?.save(Object.fromEntries(this.titles))
+      }
+      return title
+    } catch { return undefined }
   }
 
   private ackFor(blocks: ContentBlock[]): string {
@@ -538,8 +586,17 @@ export class ImGateway {
       const observations = await query.readTitleSnapshots(top.map((r) => r.header.id))
       titles = observations as unknown as Array<{ ok: boolean; value?: { title?: string } }>
     } catch { /* 标题读取失败不阻塞 */ }
+    // 无 dsh 标题的会话：用缓存标题，仍无则懒读取会话日志补全（限制并发，显示范围内全部补）
+    const needBackfill = top.map((r, i) => ({ r, i })).filter(({ r, i }) => {
+      const dshTitle = titles[i]?.ok ? (titles[i].value?.title ?? '') : ''
+      return !dshTitle && !this.titles.has(String(r.header.id))
+    })
+    await runBatched(needBackfill.slice(0, 20), 3, async ({ r }) => {
+      await this.lazyTitle(String(r.header.id))
+    })
     const body = top.map((r, i) => {
-      const title = titles[i]?.ok ? (titles[i].value?.title ?? '') : ''
+      const dshTitle = titles[i]?.ok ? (titles[i].value?.title ?? '') : ''
+      const title = dshTitle || this.titles.get(String(r.header.id)) || ''
       const live = r.live ? '🟢' : '💤'
       const cwd = r.header.cwd ? `\n   📁 ${r.header.cwd.length > 36 ? `…${r.header.cwd.slice(-35)}` : r.header.cwd}` : ''
       return `[${i + 1}] ${r.header.id} ${title ? `「${title.slice(0, 30)}」` : ''}${r.header.createdAt ? ` · ${relTime(r.header.createdAt)}` : ''} ${live}${cwd}`
@@ -673,4 +730,23 @@ function relTime(ms: number): string {
   const hours = Math.floor(min / 60)
   if (hours < 24) return `${hours} 小时前`
   return `${Math.floor(hours / 24)} 天前`
+}
+
+/** 从文本生成简短标题（去命令、去换行、截断 24 字符）。 */
+function summarizeTitle(text: string): string {
+  const clean = text
+    .replace(/^\/(help|status|new|clear|sessions|workspace\S*|continue\S*|workspaces|bind\S*|unbind|channels)\b.*$/m, '')
+    .replace(/[`*_#>\-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (clean === '') return ''
+  return [...clean].slice(0, 24).join('')
+}
+
+/** 分批并发执行（限制并发数，避免一次性打爆资源）。 */
+async function runBatched<T>(items: T[], batchSize: number, fn: (item: T) => Promise<void>): Promise<void> {
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize)
+    await Promise.all(batch.map((item) => fn(item).catch(() => undefined)))
+  }
 }
