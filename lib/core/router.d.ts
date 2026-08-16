@@ -31,6 +31,11 @@ export interface RouterOptions {
     model: string;
     /** 创建会话使用的 agent preset（默认 standard；不挂 preset 会缺失核心工具）。 */
     agentPreset: string;
+    /** 每 chat 最后绑定的会话持久化（重启后自动恢复）。 */
+    chatSessionStore?: {
+        load(): Record<string, string>;
+        save(sessions: Record<string, string>): void;
+    };
 }
 export declare class SessionRouter {
     private readonly ctx;
@@ -40,6 +45,8 @@ export declare class SessionRouter {
     private readonly bySession;
     /** 每 chat 的工作区偏好（/workspace 设置，持久化由网关层负责）。 */
     private readonly workspaces;
+    /** chat 最后绑定的会话（持久化，重启恢复）。 */
+    private readonly chatSessions;
     constructor(ctx: Context, options: RouterOptions);
     /** 恢复持久化的工作区偏好（启动时由网关层灌入）。 */
     restoreWorkspaces(entries: Array<[string, string]>): void;
@@ -51,8 +58,10 @@ export declare class SessionRouter {
     workspaceEntries(): Array<[string, string]>;
     /** 取 chat 条目；不存在时返回 undefined（调用方决定是否创建）。 */
     get(channelId: string, chatId: string): ChatEntry | undefined;
-    /** per-chat 模式：取或建（自动创建 agent 会话；优先 chat 的工作区偏好）。 */
+    /** per-chat 模式：取或建（优先恢复该 chat 上次的会话，否则创建新会话）。 */
     getOrCreate(channelId: string, chatId: string): Promise<ChatEntry>;
+    /** 记录 chat 当前绑定的会话（持久化，重启后恢复）。 */
+    recordChatSession(channelId: string, chatId: string, sessionId: string): void;
     /** 创建新会话（per-chat；cwd 优先 chat 工作区偏好）。 */
     create(channelId: string, chatId: string): Promise<ChatEntry>;
     /**

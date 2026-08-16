@@ -562,3 +562,28 @@ test('多端共享会话：两个 chat 继续同一会话，上下文互见、�
 
   gw.dispose()
 })
+
+test('重启后自动恢复上次会话（chatSessionStore）', async () => {
+  const ctx = makeCtx()
+  const saved = []
+  const gw = new ImGateway(ctx, {
+    config: baseConfig,
+    stateDir: '/tmp',
+    log: () => {},
+    chatSessionStore: {
+      load: () => ({ 'test:c1': 'session-prev-1' }),
+      save: (sessions) => { saved.push(sessions) },
+    },
+  })
+  const { channel, sent } = makeChannel()
+  gw.register(channel)
+
+  // 模拟重启：chatSessionStore 里有上次绑定的会话 → 首次消息应恢复而不是新建
+  await channel.handler({ chatId: 'c1', userId: 'u1', text: '继续上次!!' })
+  assert.equal(ctx._resumeOpts?.resumeSessionId, 'session-prev-1', '应 resume 上次会话')
+  const agent = ctx._agents.get('session-prev-1')
+  assert.ok(agent, '消息进入上次会话')
+  assert.equal(agent.record.msg.content[0].text, '继续上次')
+
+  gw.dispose()
+})

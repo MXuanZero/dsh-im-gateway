@@ -37,6 +37,11 @@ export interface RouterOptions {
   model: string
   /** 创建会话使用的 agent preset（默认 standard；不挂 preset 会缺失核心工具）。 */
   agentPreset: string
+  /** 每 chat 最后绑定的会话持久化（重启后自动恢复）。 */
+  chatSessionStore?: {
+    load(): Record<string, string>
+    save(sessions: Record<string, string>): void
+  }
 }
 
 export class SessionRouter {
@@ -48,10 +53,13 @@ export class SessionRouter {
 
   /** 每 chat 的工作区偏好（/workspace 设置，持久化由网关层负责）。 */
   private readonly workspaces = new Map<string, string>()
+  /** chat 最后绑定的会话（持久化，重启恢复）。 */
+  private readonly chatSessions = new Map<string, string>()
 
   constructor(ctx: Context, options: RouterOptions) {
     this.ctx = ctx
     this.options = options
+    for (const [key, sid] of Object.entries(options.chatSessionStore?.load() ?? {})) this.chatSessions.set(key, sid)
   }
 
   /** 恢复持久化的工作区偏好（启动时由网关层灌入）。 */
@@ -82,12 +90,25 @@ export class SessionRouter {
     return this.entries.get(`${channelId}:${chatId}`)
   }
 
-  /** per-chat 模式：取或建（自动创建 agent 会话；优先 chat 的工作区偏好）。 */
+  /** per-chat 模式：取或建（优先恢复该 chat 上次的会话，否则创建新会话）。 */
   async getOrCreate(channelId: string, chatId: string): Promise<ChatEntry> {
     const key = `${channelId}:${chatId}`
     const existing = this.entries.get(key)
     if (existing) return existing
+    // 重启恢复：上次绑定的会话仍存在则继续它（resume/复用 live），否则新建
+    const last = this.chatSessions.get(key)
+    if (last) {
+      const restored = await this.continueSession(channelId, chatId, last)
+      if (restored.ok) return this.entries.get(key)!
+    }
     return this.create(channelId, chatId)
+  }
+
+  /** 记录 chat 当前绑定的会话（持久化，重启后恢复）。 */
+  recordChatSession(channelId: string, chatId: string, sessionId: string): void {
+    const key = `${channelId}:${chatId}`
+    this.chatSessions.set(key, sessionId)
+    this.options.chatSessionStore?.save(Object.fromEntries(this.chatSessions))
   }
 
   /** 创建新会话（per-chat；cwd 优先 chat 工作区偏好）。 */
@@ -104,6 +125,7 @@ export class SessionRouter {
     const entry: ChatEntry = { channelId, chatId, key, sessionId: String(sessionId), handle, workspace: cwd }
     this.entries.set(key, entry)
     this.index(entry)
+    this.recordChatSession(channelId, chatId, String(sessionId))
     return entry
   }
 
@@ -157,6 +179,7 @@ export class SessionRouter {
         const entry: ChatEntry = { channelId, chatId, key, sessionId, handle }
         this.entries.set(key, entry)
         this.index(entry)
+        this.recordChatSession(channelId, chatId, sessionId)
         return { ok: true, workspace: sessionCwdOf(handle.agent) }
       } catch (err) {
         return { ok: false, error: `继续会话失败：${err instanceof Error ? err.message : String(err)}` }
@@ -170,6 +193,7 @@ export class SessionRouter {
     const entry: ChatEntry = { channelId, chatId, key, sessionId, agent: liveAgent, boundBy: undefined }
     this.entries.set(key, entry)
     this.index(entry)
+    this.recordChatSession(channelId, chatId, sessionId)
     return { ok: true, workspace: sessionCwdOf(liveAgent) }
   }
 

@@ -84,6 +84,11 @@ export interface GatewayOptions {
   }
   /** 会话日志根目录（$DSH_HOME/sessions），用于读取历史会话的最后更新时间。 */
   sessionsRoot?: string
+  /** 每 chat 最后绑定的会话持久化（重启后自动恢复上次会话）。 */
+  chatSessionStore?: {
+    load(): Record<string, string>
+    save(sessions: Record<string, string>): void
+  }
 }
 
 export class ImGateway {
@@ -130,6 +135,7 @@ export class ImGateway {
       provider: this.config.provider,
       model: this.config.model,
       agentPreset: this.config.agentPreset ?? 'standard',
+      chatSessionStore: options.chatSessionStore,
     })
     // 恢复每聊天工作区偏好
     this.router.restoreWorkspaces(options.workspaceStore?.load() ?? [])
