@@ -7,8 +7,10 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { AgentHandle } from '@deepseek-ai/dsh-agent'
+import type { AgentHandle, AgentSetup } from '@deepseek-ai/dsh-agent'
 import { SessionId } from '@deepseek-ai/dsh-session'
+// dsh-agent-presets 模块增强（ctx.agentPresets：把 agent 挂入 preset，否则无核心工具）
+import type {} from '@deepseek-ai/dsh-agent-presets'
 
 /** 一个 chat 的会话条目。 */
 export interface ChatEntry {
@@ -31,6 +33,8 @@ export interface RouterOptions {
   cwd: string
   provider: string
   model: string
+  /** 创建会话使用的 agent preset（默认 standard；不挂 preset 会缺失核心工具）。 */
+  agentPreset: string
 }
 
 export class SessionRouter {
@@ -93,11 +97,36 @@ export class SessionRouter {
       sessionId,
       meta: { cwd },
       agentOptions: { provider: this.options.provider, model: this.options.model },
+      setup: this.presetSetup(this.options.agentPreset),
     })
     const entry: ChatEntry = { channelId, chatId, key, sessionId: String(sessionId), handle, workspace: cwd }
     this.entries.set(key, entry)
     this.index(entry)
     return entry
+  }
+
+  /**
+   * Agent setup：把 agent scope 挂入 preset（否则工具/prompt/skills 只有全局层，
+   * 缺失 bash/fs/web 等核心工具）。
+   */
+  private presetSetup(presetId: string): AgentSetup {
+    const ctx = this.ctx
+    return async (agentCtx) => {
+      await ctx.agentPresets.mount(agentCtx, presetId)
+    }
+  }
+
+  /** 解析会话的 agentPreset（header 记录；未知时用默认）。 */
+  private async presetOf(sessionId: string): Promise<string> {
+    try {
+      const query = this.ctx.sessionQuery
+      if (query) {
+        const records = await query.filterSessions([{ kind: 'id', values: [SessionId(sessionId)] }])
+        const header = records[0]?.header as { agentPreset?: string } | undefined
+        if (header?.agentPreset) return header.agentPreset
+      }
+    } catch { /* 未知则用默认 */ }
+    return this.options.agentPreset
   }
 
   /**
@@ -111,10 +140,13 @@ export class SessionRouter {
     let liveAgent = this.ctx.agents.get(SessionId(sessionId))
     if (!liveAgent) {
       try {
-        // 必须带 agentOptions（provider/model），否则 prompt 组装缺 {{model}} 变量
+        // 必须带 agentOptions（provider/model）与 setup（挂入 preset），否则
+        // prompt 缺 {{model}} 变量、且工具只剩全局层（无 bash/fs/web 等核心工具）
+        const preset = await this.presetOf(sessionId)
         const handle = await this.ctx.agents.resume({
           resumeSessionId: SessionId(sessionId),
           agentOptions: { provider: this.options.provider, model: this.options.model },
+          setup: this.presetSetup(preset),
         })
         if (existing?.handle) {
           this.unindex(existing)

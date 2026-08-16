@@ -167,6 +167,8 @@ export interface ImGatewayConfig {
     provider: string;
     /** agent 模型（默认跟随 dsh agent-default-model）。 */
     model: string;
+    /** 创建会话使用的 agent preset（默认 standard；必须挂 preset 才有核心工具）。 */
+    agentPreset: string;
     /** 全局放行所有用户（仅开发）。 */
     allowAllUsers: boolean;
     /** 全局白名单：{ channelId: string[] } 或扁平数组（匹配任意渠道 userId）。 */

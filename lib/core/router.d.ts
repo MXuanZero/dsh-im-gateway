@@ -27,6 +27,8 @@ export interface RouterOptions {
     cwd: string;
     provider: string;
     model: string;
+    /** 创建会话使用的 agent preset（默认 standard；不挂 preset 会缺失核心工具）。 */
+    agentPreset: string;
 }
 export declare class SessionRouter {
     private readonly ctx;
@@ -51,6 +53,13 @@ export declare class SessionRouter {
     getOrCreate(channelId: string, chatId: string): Promise<ChatEntry>;
     /** 创建新会话（per-chat；cwd 优先 chat 工作区偏好）。 */
     create(channelId: string, chatId: string): Promise<ChatEntry>;
+    /**
+     * Agent setup：把 agent scope 挂入 preset（否则工具/prompt/skills 只有全局层，
+     * 缺失 bash/fs/web 等核心工具）。
+     */
+    private presetSetup;
+    /** 解析会话的 agentPreset（header 记录；未知时用默认）。 */
+    private presetOf;
     /**
      * 继续已有会话（per-chat）：优先复用本进程 live agent，否则 resume 持久化会话。
      * 成功时把 chat 条目切换到该会话。

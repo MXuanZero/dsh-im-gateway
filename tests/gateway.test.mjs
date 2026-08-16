@@ -57,6 +57,12 @@ function makeCtx() {
     _listeners: listeners,
     _agents: agents,
   }
+  // agentPresets：resume/create 的 setup 会调用 mount（mock 记录）
+  ctx.agentPresets = {
+    mount: async (agentCtx, presetId) => {
+      ctx._mountedPresets = [...(ctx._mountedPresets ?? []), presetId]
+    },
+  }
   return ctx
 }
 
@@ -83,6 +89,7 @@ const baseConfig = {
   cwd: process.cwd(),
   provider: 'deepseek-official',
   model: 'deepseek-v4-flash',
+  agentPreset: 'standard',
   allowAllUsers: true,
   allowedUserIds: {},
   mergeTimeoutSecs: 1,
