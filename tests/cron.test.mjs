@@ -175,3 +175,52 @@ test('重叠保护：tick 未完成时不重入', async () => {
     assert.equal(sent.length, 1)
   } finally { teardown(stateDir) }
 })
+
+test('一次性 at：创建 oneShot 任务，nextRunAt 精确', () => {
+  const clock = makeClock(Date.UTC(2026, 7, 17, 0, 0))
+  const { registry, stateDir } = makeRegistry({ clock })
+  try {
+    const r = registry.addTask({ channelId: 'w', chatId: 'c', at: '2026-09-18T09:00:00+08:00', prompt: '拿证件' })
+    assert.equal(r.ok, true)
+    if (r.ok) {
+      assert.equal(r.task.oneShot, true)
+      assert.equal(iso(r.task.nextRunAt), '2026-09-18T01:00:00.000Z')
+    }
+  } finally { teardown(stateDir) }
+})
+
+test('一次性 at：过去时刻被拒绝；本地时刻缺 tz 被拒绝', () => {
+  const clock = makeClock(Date.UTC(2026, 7, 17, 0, 0))
+  const { registry, stateDir } = makeRegistry({ clock })
+  try {
+    assert.equal(registry.addTask({ channelId: 'w', chatId: 'c', at: '2026-08-01T09:00:00+08:00', prompt: 'x' }).ok, false)
+    assert.equal(registry.addTask({ channelId: 'w', chatId: 'c', at: '2026-09-18T09:00:00', prompt: 'x' }).ok, false)
+    // 本地时刻 + tz 合法
+    assert.equal(registry.addTask({ channelId: 'w', chatId: 'c', at: '2026-09-18T09:00:00', tz: TZ, prompt: 'x' }).ok, true)
+  } finally { teardown(stateDir) }
+})
+
+test('一次性触发成功后任务被移除', async () => {
+  const clock = makeClock(Date.UTC(2026, 7, 17, 0, 0))
+  const { registry, stateDir, sent } = makeRegistry({ clock })
+  try {
+    const r = registry.addTask({ channelId: 'w', chatId: 'c', at: '2026-08-17T08:30:00+08:00', prompt: '洗澡' })
+    assert.ok(r.ok)
+    clock.set(Date.UTC(2026, 7, 17, 0, 31))
+    await registry.tick()
+    assert.deepEqual(sent.map((s) => s.text), ['洗澡'])
+    assert.equal(registry.list().length, 0) // 已移除
+    const persisted = JSON.parse(readFileSync(join(stateDir, 'cron.json'), 'utf8'))
+    assert.equal(persisted.tasks.length, 0)
+  } finally { teardown(stateDir) }
+})
+
+test('错过的一次性提醒（catchUp=false）加载时丢弃', () => {
+  const stateDir = mkdtempSync(join(tmpdir(), 'cron-test-'))
+  try {
+    const first = new CronRegistry({ stateDir, log: () => undefined, catchUp: false, send: async () => true, now: () => Date.UTC(2026, 7, 16, 0, 0) })
+    first.addTask({ channelId: 'w', chatId: 'c', at: '2026-08-17T01:00:00+08:00', prompt: '洗澡' }) // nextRunAt 08-17 00:00Z
+    const again = new CronRegistry({ stateDir, log: () => undefined, catchUp: false, send: async () => true, now: () => Date.UTC(2026, 7, 18, 0, 0) })
+    assert.equal(again.list().length, 0) // 已过期且不补跑 → 丢弃
+  } finally { teardown(stateDir) }
+})

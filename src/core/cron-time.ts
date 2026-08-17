@@ -86,8 +86,8 @@ function offsetAt(epochMs: number, tz: string): number {
  * 本地墙钟 → epoch（两遍法收敛 DST 偏移）。
  * 重叠（两次偏移不同）取较早的瞬时；间隙（换算回来对不上）返回 undefined。
  */
-function zonedEpoch(y: number, mo: number, d: number, h: number, mi: number, tz: string): number | undefined {
-  const guess = Date.UTC(y, mo - 1, d, h, mi)
+function zonedEpoch(y: number, mo: number, d: number, h: number, mi: number, tz: string, s = 0): number | undefined {
+  const guess = Date.UTC(y, mo - 1, d, h, mi, s)
   const off1 = offsetAt(guess, tz)
   const cand = guess - off1
   const off2 = offsetAt(cand, tz)
@@ -97,6 +97,33 @@ function zonedEpoch(y: number, mo: number, d: number, h: number, mi: number, tz:
   const back = wallClock(chosen, tz)
   if (back.y !== y || back.mo !== mo || back.d !== d || back.h !== h || back.mi !== mi) return undefined
   return chosen
+}
+
+/** 绝对时刻（ISO 8601 本地形式，无时区）的正则。 */
+const LOCAL_AT_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/
+
+/**
+ * 解析一次性提醒的绝对时刻：
+ * - 带显式时区偏移（Z 或 ±HH:MM）→ 直接按偏移换算（如 2026-09-18T09:00:00+08:00）
+ * - 无偏移的本地形式 → 必须配合 IANA tz 按该时区解释（DST 间隙返回 undefined）
+ * 非法输入返回 undefined。
+ */
+export function parseAbsoluteAt(at: string, tz?: string): number | undefined {
+  const trimmed = at.trim()
+  const withOffset = Date.parse(trimmed)
+  if (Number.isFinite(withOffset) && /Z|[+-]\d{2}:\d{2}$/.test(trimmed)) return withOffset
+  const m = LOCAL_AT_RE.exec(trimmed)
+  if (m && tz) {
+    const y = Number(m[1])
+    const mo = Number(m[2])
+    const d = Number(m[3])
+    const h = Number(m[4])
+    const mi = Number(m[5])
+    const s = Number(m[6] ?? 0)
+    if (mo < 1 || mo > 12 || d < 1 || d > 31 || h > 23 || mi > 59 || s > 59) return undefined
+    return zonedEpoch(y, mo, d, h, mi, tz, s)
+  }
+  return undefined
 }
 
 /**

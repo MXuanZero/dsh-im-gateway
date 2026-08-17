@@ -217,18 +217,22 @@ export class ImGateway {
         name: 'im_cron_add',
         description:
           '创建聊天级定时提醒：到点直接推送到当前 IM 聊天，与会话轮换（/new）无关。' +
+          '用户说「提醒我…/定时…/几点叫我/多少分钟后叫我」时优先使用本工具；' +
+          '不要使用 schedule_create——它绑定会话，/new 轮换后提醒会丢失，而本工具绑定聊天不受影响。' +
+          'at 为一次性提醒（ISO 8601 带时区偏移，或本地时刻配合 tz）；time 为每天/每周周期提醒；二者选一。' +
           'remind 模式到点直推文案；task 模式（一次性 agent 执行）暂未实现。',
         parameters: {
           type: 'object',
           properties: {
             prompt: { type: 'string', description: '提醒文案（如：该去拿证件了）' },
-            time: { type: 'string', description: '本地时刻 HH:MM（24 小时制）' },
+            at: { type: 'string', description: '一次性提醒时刻：ISO 8601 带时区偏移（如 2026-09-18T09:00:00+08:00），或本地时刻（如 2026-09-18T09:00:00）配合 tz；与 time 二选一' },
+            time: { type: 'string', description: '周期提醒：本地时刻 HH:MM（24 小时制），如 09:00；与 at 二选一' },
             days: { type: 'array', items: { type: 'number' }, description: '星期 1=周一…7=周日；省略=每天' },
             tz: { type: 'string', description: 'IANA 时区（如 Asia/Hong_Kong）；省略=进程默认' },
             mode: { type: 'string', enum: ['remind', 'task'], description: 'remind=到点直推（默认）；task=一次性 agent 执行（未实现）' },
             workspace: { type: 'string', description: 'task 模式的工作目录（可选）' },
           },
-          required: ['prompt', 'time'],
+          required: ['prompt'],
         },
         output: {
           schema: {
@@ -315,10 +319,12 @@ export class ImGateway {
     const chat = this.chatOfSession(sessionId)
     if (!chat) return { ok: false, detail: '当前会话没有关联的 IM 聊天（仅 IM 发起的会话可用此工具）' }
     const days = Array.isArray(input.days) ? (input.days as unknown[]).map(Number) : []
+    const at = typeof input.at === 'string' && input.at !== '' ? input.at : undefined
+    const time = typeof input.time === 'string' && input.time !== '' ? input.time : undefined
     const result = registry.addTask({
       channelId: chat.channelId,
       chatId: chat.chatId,
-      time: String(input.time ?? ''),
+      ...(at !== undefined ? { at } : { time: time ?? '' }),
       days,
       ...(typeof input.tz === 'string' && input.tz !== '' ? { tz: input.tz } : {}),
       mode: input.mode === 'task' ? 'task' : 'remind',

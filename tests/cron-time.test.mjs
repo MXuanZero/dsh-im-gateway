@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { nextOccurrence, parseTimeOfDay } from '../lib/core/cron-time.js'
+import { nextOccurrence, parseAbsoluteAt, parseTimeOfDay } from '../lib/core/cron-time.js'
 
 const iso = (ms) => new Date(ms).toISOString()
 
@@ -76,4 +76,21 @@ test('无匹配星期：7 天内没有允许日仍可越过', () => {
     iso(nextOccurrence({ time: '09:00', days: [7], tz: 'Asia/Hong_Kong' }, Date.UTC(2026, 7, 17, 0, 0))),
     '2026-08-23T01:00:00.000Z',
   )
+})
+
+test('parseAbsoluteAt：带偏移的 ISO 时刻', () => {
+  assert.equal(parseAbsoluteAt('2026-09-18T09:00:00+08:00'), Date.parse('2026-09-18T09:00:00+08:00'))
+  assert.equal(parseAbsoluteAt('2026-09-18T01:00:00Z'), Date.parse('2026-09-18T01:00:00Z'))
+})
+
+test('parseAbsoluteAt：本地时刻配合 tz 按 IANA 解释', () => {
+  assert.equal(parseAbsoluteAt('2026-09-18T09:00:00', 'Asia/Hong_Kong'), Date.UTC(2026, 8, 18, 1, 0, 0))
+  assert.equal(parseAbsoluteAt('2026-09-18T09:00', 'Asia/Hong_Kong'), Date.UTC(2026, 8, 18, 1, 0, 0))
+})
+
+test('parseAbsoluteAt：非法输入', () => {
+  assert.equal(parseAbsoluteAt('2026-09-18T09:00:00'), undefined) // 本地形式缺 tz
+  assert.equal(parseAbsoluteAt('2026-13-40T09:00:00', 'Asia/Hong_Kong'), undefined) // 月份非法
+  assert.equal(parseAbsoluteAt('随便写', 'Asia/Hong_Kong'), undefined)
+  assert.equal(parseAbsoluteAt(''), undefined)
 })

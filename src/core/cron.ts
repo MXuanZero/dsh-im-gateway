@@ -11,7 +11,7 @@
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { nextOccurrence, parseTimeOfDay } from './cron-time.js'
+import { nextOccurrence, parseAbsoluteAt, parseTimeOfDay } from './cron-time.js'
 import type { CronTask } from './types.js'
 
 export interface CronRegistryOptions {
@@ -31,8 +31,10 @@ export interface CronRegistryOptions {
 export interface AddCronInput {
   channelId: string
   chatId: string
-  /** 本地时刻 "HH:MM"。 */
-  time: string
+  /** 周期提醒：本地时刻 "HH:MM"；与 at 二选一。 */
+  time?: string
+  /** 一次性提醒：ISO 8601 绝对时刻（带时区偏移，或本地时刻配合 tz）；与 time 二选一。 */
+  at?: string
   /** 星期 1=周一 … 7=周日；缺省每天。 */
   days?: number[]
   /** IANA 时区；缺省进程默认。 */
@@ -75,6 +77,11 @@ export class CronRegistry {
       const task: CronTask = { ...raw }
       // 启动时修正派生的 nextRunAt：过期且不补跑 → 前跳；过期且补跑 → 保留（下次 tick 触发最近一次）
       if (task.enabled && typeof task.nextRunAt === 'number' && task.nextRunAt <= now && !this.options.catchUp) {
+        if (task.oneShot) {
+          // 一次性提醒已错过且不补跑：直接丢弃（没有"下一次"）
+          this.options.log(`[cron] ${task.id} 一次性提醒已错过（catchUp=false），丢弃`)
+          continue
+        }
         const next = nextOccurrence({ time: task.time, days: task.days ?? [], tz: task.tz }, now)
         if (next !== undefined) task.nextRunAt = next
       }
@@ -97,13 +104,42 @@ export class CronRegistry {
 
   // ── 任务管理（工具/API 调用）────────────────────────────
 
-  /** 添加任务：校验计划合法性并预计算 nextRunAt。 */
+  /** 添加任务：at（一次性）与 time（周期）二选一，校验合法性并预计算 nextRunAt。 */
   addTask(input: AddCronInput): AddCronResult {
-    if (parseTimeOfDay(input.time) === undefined) return { ok: false, error: `无效时刻：${input.time}（应为 "HH:MM"）` }
     if (input.prompt.trim() === '') return { ok: false, error: '提醒内容不能为空' }
-    const days = (input.days ?? []).filter((d) => VALID_DAYS.has(d))
     const mode = input.mode === 'task' ? 'task' : 'remind'
     const now = this.now()
+    // 一次性（at）：绝对时刻 → nextRunAt；触发成功后移除
+    if (input.at !== undefined && input.at !== '') {
+      const atEpoch = parseAbsoluteAt(input.at, input.tz)
+      if (atEpoch === undefined) return { ok: false, error: `无效的 at 时刻：${input.at}（需带时区偏移如 2026-09-18T09:00:00+08:00，或本地时刻配合 tz）` }
+      if (atEpoch <= now) return { ok: false, error: 'at 必须晚于当前时间' }
+      this.seq += 1
+      const task: CronTask = {
+        id: `cron:${input.channelId}:${input.chatId}:${now}:${this.seq}`,
+        channelId: input.channelId,
+        chatId: input.chatId,
+        time: '00:00',
+        days: [],
+        ...(input.tz ? { tz: input.tz } : {}),
+        mode,
+        prompt: input.prompt.trim(),
+        ...(input.workspace ? { workspace: input.workspace } : {}),
+        enabled: true,
+        oneShot: true,
+        nextRunAt: atEpoch,
+        createdAt: now,
+      }
+      this.tasks.set(task.id, task)
+      this.save()
+      this.options.log(`[cron] 已添加一次性 ${mode} 任务 ${task.id}：${input.at} → ${input.channelId}:${input.chatId}`)
+      return { ok: true, task }
+    }
+    // 周期（time+days）
+    if (input.time === undefined || parseTimeOfDay(input.time) === undefined) {
+      return { ok: false, error: `需提供 time（"HH:MM" 周期）或 at（一次性时刻），当前 time=${input.time ?? '（空）'}` }
+    }
+    const days = (input.days ?? []).filter((d) => VALID_DAYS.has(d))
     const next = nextOccurrence({ time: input.time, days, tz: input.tz }, now)
     if (next === undefined) return { ok: false, error: `无法计算下一次触发时刻（time=${input.time}, days=[${days.join(',')}], tz=${input.tz ?? '默认'}）` }
     this.seq += 1
@@ -144,7 +180,7 @@ export class CronRegistry {
     const task = this.tasks.get(id)
     if (!task) return false
     task.enabled = enabled
-    if (enabled) {
+    if (enabled && !task.oneShot) {
       const next = nextOccurrence({ time: task.time, days: task.days ?? [], tz: task.tz }, this.now())
       if (next !== undefined) task.nextRunAt = next
     }
@@ -192,7 +228,12 @@ export class CronRegistry {
         return
       }
       task.lastRunAt = now
-      task.nextRunAt = this.advance(task, now)
+      if (task.oneShot) {
+        this.tasks.delete(task.id)
+        this.options.log(`[cron] ${task.id} 一次性提醒已触发并移除`)
+      } else {
+        task.nextRunAt = this.advance(task, now)
+      }
       this.options.log(`[cron] ${task.id} 已提醒 ${task.channelId}:${task.chatId}`)
     } finally {
       task.running = false

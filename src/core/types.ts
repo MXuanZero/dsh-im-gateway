@@ -170,6 +170,8 @@ export interface CronTask {
   enabled: boolean
   /** 预计算的下一触发时刻（UTC epoch ms）。 */
   nextRunAt: number
+  /** 一次性提醒（at 创建）：触发成功后任务即被移除。 */
+  oneShot?: boolean
   lastRunAt?: number
   /** 运行中标志（防重入）。 */
   running?: boolean
