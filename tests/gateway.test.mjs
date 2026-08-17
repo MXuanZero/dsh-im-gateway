@@ -54,6 +54,13 @@ function makeCtx() {
       listSessions: async () => [],
       readTitleSnapshots: async () => [],
     },
+    userQuestions: {
+      ask: (request) => new Promise((resolve, reject) => {
+        ctx._questionRequest = request
+        ctx._resolveQuestion = resolve
+        request.signal?.addEventListener('abort', () => reject(new Error('web question aborted')), { once: true })
+      }),
+    },
     _listeners: listeners,
     _agents: agents,
   }
@@ -95,6 +102,7 @@ const baseConfig = {
   mergeTimeoutSecs: 1,
   longInputAckChars: 180,
   approvalTimeoutSecs: 5,
+  questionTimeoutSecs: 1,
   summaryOnTurnEnd: false,
   stateDir: '/tmp',
 }
@@ -608,6 +616,51 @@ test('重启后 /status 命令也触发会话恢复', async () => {
   const reply = sent.find((s) => s.text.includes('绑定会话'))
   assert.ok(reply, '/status 应有回复')
   assert.ok(reply.text.includes('session-prev-9'), '/status 应显示恢复的会话')
+
+  gw.dispose()
+})
+
+test('ask_user_question 同步到 IM，IM 选择恢复等待中的 ask', async () => {
+  const ctx = makeCtx()
+  const originalAsk = ctx.userQuestions.ask
+  const gw = new ImGateway(ctx, { config: baseConfig, stateDir: '/tmp', log: () => {} })
+  const { channel, sent } = makeChannel('qqbot')
+  gw.register(channel)
+  await channel.handler({ chatId: 'c1', userId: 'u1', text: '先建立会话!!' })
+  const { agent } = [...ctx._agents.values()][0]
+
+  const answerPromise = ctx.userQuestions.ask({
+    agent,
+    questions: [{ id: 'mode', question: '请选择模式', options: [{ label: '快速' }, { label: '完整' }] }],
+  })
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.match(sent.map((item) => item.text).join('\n'), /请选择模式/)
+  assert.match(sent.map((item) => item.text).join('\n'), /2\) 完整/)
+
+  await channel.handler({ chatId: 'c1', userId: 'u1', text: '2' })
+  assert.deepEqual(await answerPromise, { answers: [{ id: 'mode', selected: ['完整'] }] })
+  assert.match(sent.map((item) => item.text).join('\n'), /已选择：完整/)
+
+  gw.dispose()
+  assert.equal(ctx.userQuestions.ask, originalAsk, 'dispose 应恢复原始 Web provider ask')
+})
+
+test('网页先回答 ask_user_question 时同步通知 IM', async () => {
+  const ctx = makeCtx()
+  const gw = new ImGateway(ctx, { config: baseConfig, stateDir: '/tmp', log: () => {} })
+  const { channel, sent } = makeChannel('wechat')
+  gw.register(channel)
+  await channel.handler({ chatId: 'c1', userId: 'u1', text: '先建立会话!!' })
+  const { agent } = [...ctx._agents.values()][0]
+
+  const answerPromise = ctx.userQuestions.ask({
+    agent,
+    questions: [{ id: 'confirm', question: '是否继续？', options: [{ label: '继续' }, { label: '取消' }] }],
+  })
+  await new Promise((resolve) => setImmediate(resolve))
+  ctx._resolveQuestion({ answers: [{ id: 'confirm', selected: ['继续'] }] })
+  assert.deepEqual(await answerPromise, { answers: [{ id: 'confirm', selected: ['继续'] }] })
+  assert.match(sent.map((item) => item.text).join('\n'), /已在网页端回答：继续/)
 
   gw.dispose()
 })

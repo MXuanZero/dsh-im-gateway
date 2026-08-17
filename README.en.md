@@ -1,7 +1,7 @@
 # 🐋 dsh-im-gateway
 
 <h3 align="center">Connect DeepSeek Harness to every chat app you use</h3>
-<p align="center">Aggregated IM gateway for <b>DeepSeek Harness (dsh)</b> — drive your coding agents from <b>WeChat, Feishu, Telegram, Discord, QQ</b> and 20+ chat platforms, with unified sessions, remote approvals and one-command setup.</p>
+<p align="center">Aggregated IM gateway for <b>DeepSeek Harness (dsh)</b> — drive your coding agents from <b>WeChat, Feishu, Telegram, Discord, QQ</b> and 20+ chat platforms, with unified sessions, remote approvals, interactive questions and one-command setup.</p>
 
 <p align="center">
   <img alt="npm version" src="https://img.shields.io/npm/v/dsh-im-gateway?color=4d6bfe">
@@ -11,7 +11,7 @@
   <img alt="Channels" src="https://img.shields.io/badge/channels-24%2B-238636">
   <img alt="DSH bundle" src="https://img.shields.io/badge/dsh-bundle%20plugin-4d6bfe">
   <img alt="PRs Welcome" src="https://img.shields.io/badge/PRs-welcome-brightgreen">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-60%20passed-238636">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-70%20passed-238636">
 </p>
 
 <p align="center"><b>English</b> · <a href="README.md">简体中文</a></p>
@@ -93,6 +93,7 @@ Messages starting with `/` in any connected chat are commands:
 - 🌐 **23+ channels covered** — aligned with OpenClaw's channel surface: WeChat, Feishu, Telegram, Discord, Slack, QQ, WhatsApp, Signal, Teams, LINE, Matrix, Mattermost, IRC, Twitch, Nostr, Zalo, iMessage…
 - 🔁 **One agent session per chat** — chatting in a group drives the agent, replies stream back in real time; `/new` starts a fresh session, `/bind` attaches an existing one
 - ✅ **Remote approval bridge** — when the agent requests a tool approval it's pushed to the chat; reply 「approve / reject」 right there, and it falls back to the local approval system on timeout
+- ❓ **Interactive Question Bridge** — `ask_user_question` prompts and options fan out to every bound channel; answer from Web or any IM, and the first valid answer resumes the same agent
 - 📱 **Mobile multi-part input merge** — `..` means "more coming", `!!` submits immediately, bare text merges within a 5s window, auto-recovers after a crash
 - ✂️ **Smart splitting of long replies** — chunks by each channel's limit, breaks at newlines/periods first, numbered `(i/n)` and convergent
 - 🛡️ **Allowlist-safe by default** — unknown users are rejected by default; approval replies are strictly checked against session ownership
@@ -100,6 +101,19 @@ Messages starting with `/` in any connected chat are commands:
 - 🖼️ **Media in and out** — WeChat fully supports images/voice (server-side transcription)/files/video (CDN AES-128-ECB encrypted); agents can send workspace files into chats via the `im_send_file` tool
 - 📦 **One-command install + visual setup** — a standard `dsh.bundle` plugin; connect channels from the Web GUI settings panel by scanning or pasting credentials, no restart needed
 - 🎯 **Beginner friendly** — WeChat/WhatsApp pop a QR code with one click; other channels use guided forms with live status
+
+### ❓ Answering interactive questions
+
+When the agent calls `ask_user_question`, the structured prompt shown in the Web GUI is also sent to every IM chat bound to that session. Web and IM remain active together: **the first valid answer wins**, every other bound channel receives a resolved notice, and the same agent resumes from its waiting point.
+
+| Question type | IM reply format | Example |
+|---|---|---|
+| Single choice | Option number, exact label, or custom text | `2`, `Full mode`, `Ask me later` |
+| Multiple choice | Separate values with commas, Chinese commas, ideographic commas, or semicolons | `1,3`, `Fast;Tests` |
+| Free text | Reply with the full answer | `Use dsh-im-gateway as the project name` |
+| Multiple questions | One line per question: `question-number: answer` | `1: 2`, then `2: 1,3` on the next line |
+
+The IM answer window is controlled by `questionTimeoutSecs` (600 seconds by default). When it expires, only the IM wait is removed—the question remains answerable in the Web GUI. Pending questions are isolated by session, and concurrent channel replies can resume the agent only once.
 
 ## 📸 Screenshots
 
@@ -121,7 +135,7 @@ Messages starting with `/` in any connected chat are commands:
 │  · recv: poll/WebSocket/ │      │    (per-chat)           │
 │    webhook → ImMessage   │      │  · allowlist & IM cmds  │
 │  · send: send(chatId,    │      │  · approval bridge      │
-│    text)                 │      │  · split/merge/format   │
+│    text)                 │      │  · question bridge      │
 └─────────────────────────┘      └────────────────────────┘
         ▲
         │  session/event · assistant/message · turn/end
@@ -223,6 +237,7 @@ All config goes under the `im-gateway` entry in the profile's `cordis.patch.yml`
       '*': ['u-common']            # cross-channel common users
     mergeTimeoutSecs: 5            # mobile multi-part merge window
     approvalTimeoutSecs: 120       # approval timeout, then fall back to local approval
+    questionTimeoutSecs: 600       # IM answer window; Web remains available after timeout
     summaryOnTurnEnd: true         # push a [✅ done] summary after each turn
     stateDir: ''                   # state dir (default $DSH_HOME/dsh-im-gateway)
 ```
@@ -255,7 +270,7 @@ All config goes under the `im-gateway` entry in the profile's `cordis.patch.yml`
 ```bash
 npm install
 npm run build          # tsc builds to lib/
-npm test               # node --test (60 cases: split/merge/approval/gateway/channel protocols)
+npm test               # node --test (70 cases: split/merge/approval/questions/gateway/channel protocols)
 ```
 
 **Adding a new channel takes 4 steps**:

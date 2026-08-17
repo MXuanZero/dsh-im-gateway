@@ -58,6 +58,8 @@ export declare class ImGateway {
     private readonly channels;
     private readonly router;
     private readonly broker;
+    private readonly questionBroker;
+    private restoreUserQuestionsAsk;
     private readonly merger;
     private readonly mergeBuffers;
     private readonly disposeEvents;
@@ -108,6 +110,9 @@ export declare class ImGateway {
     private listSessions;
     /** 会话最后更新时间：网关注入缓存 → 日志文件 mtime → createdAt。 */
     private updateTimeOf;
+    private installQuestionBridge;
+    private answerQuestion;
+    private broadcastToSession;
     private handleApprovalRequest;
     private answerApproval;
     private handleSessionEvent;

@@ -1,7 +1,7 @@
 # 🐋 dsh-im-gateway
 
 <h3 align="center">把 DeepSeek Harness 接入你常用的每一个聊天软件</h3>
-<p align="center">Aggregated IM gateway for <b>DeepSeek Harness (dsh)</b> — drive your coding agents from <b>WeChat, Feishu, Telegram, Discord, QQ</b> and 20+ chat platforms, with unified sessions, remote approvals and one-command setup.</p>
+<p align="center">Aggregated IM gateway for <b>DeepSeek Harness (dsh)</b> — drive your coding agents from <b>WeChat, Feishu, Telegram, Discord, QQ</b> and 20+ chat platforms, with unified sessions, remote approvals, interactive questions and one-command setup.</p>
 
 <p align="center">
   <img alt="npm version" src="https://img.shields.io/npm/v/dsh-im-gateway?color=4d6bfe">
@@ -11,7 +11,7 @@
   <img alt="Channels" src="https://img.shields.io/badge/channels-24%2B-238636">
   <img alt="DSH bundle" src="https://img.shields.io/badge/dsh-bundle%20plugin-4d6bfe">
   <img alt="PRs Welcome" src="https://img.shields.io/badge/PRs-welcome-brightgreen">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-60%20passed-238636">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-70%20passed-238636">
 </p>
 
 <p align="center"><a href="README.en.md">English</a> · <b>简体中文</b></p>
@@ -93,6 +93,7 @@
 - 🌐 **23+ 渠道全覆盖** — 对齐 OpenClaw 的渠道面：微信、飞书、Telegram、Discord、Slack、QQ、WhatsApp、Signal、Teams、LINE、Matrix、Mattermost、IRC、Twitch、Nostr、Zalo、iMessage……
 - 🔁 **每聊天一个 agent 会话** — 群里聊天 = 驱动 agent，回复实时回推；`/new` 换新会话，`/bind` 绑定现有会话
 - ✅ **远程审批桥** — agent 请求工具批准时推送到 IM，聊天里回一句「批准 / 拒绝」即可，超时自动转回本机批准体系
+- ❓ **交互式提问桥** — `ask_user_question` 的问题和选项同步到所有绑定渠道；Web 或任一 IM 均可回答，第一答生效并恢复同一个 agent
 - 📱 **手机多段输入合并** — `..` 表示还有后续，`!!` 立即提交，裸文本 5 秒合并窗口，崩溃后自动恢复
 - ✂️ **长回复智能分片** — 按各渠道上限切分，优先在换行/句号断行，带 `（i/n）` 序号且收敛
 - 🛡️ **白名单安全默认** — 默认拒绝一切未知用户；审批应答强制校验会话归属
@@ -100,6 +101,19 @@
 - 🖼️ **媒体收发** — 微信渠道完整支持图片/语音（服务端转文字）/文件/视频（CDN AES-128-ECB 加密），agent 可用 `im_send_file` 工具把工作区文件发给聊天
 - 📦 **一条命令安装 + 可视化连接** — 标准 `dsh.bundle` 插件；Web GUI 设置面板点选渠道、扫码/填凭据即连，无需重启
 - 🎯 **小白友好** — 微信/WhatsApp 点一下直接弹二维码；其余渠道表单引导，状态实时显示
+
+### ❓ 如何回答交互式提问
+
+当 agent 调用 `ask_user_question` 时，Web GUI 的结构化问题会同步发送到该会话绑定的全部 IM 聊天。Web 和 IM 同时可答，**第一份有效答案生效**；其余渠道会收到已回答通知，agent 随后从同一个等待点继续执行。
+
+| 问题类型 | IM 回答方式 | 示例 |
+|---|---|---|
+| 单选 | 选项编号、完整标签或自定义文字 | `2`、`完整模式`、`以后再说` |
+| 多选 | 用逗号、中文逗号、顿号或分号分隔 | `1,3`、`快速、测试` |
+| 自由输入 | 直接回复完整文本 | `项目名叫 dsh-im-gateway` |
+| 多个问题 | 每行使用 `问题序号: 答案` | `1: 2` 换行 `2: 1,3` |
+
+IM 回答窗口由 `questionTimeoutSecs` 控制（默认 600 秒）。窗口超时只会停止 IM 等待，Web GUI 中的问题仍可继续回答。等待按 session 隔离；多个渠道同时回答时，只有最先到达的一份会恢复 agent。
 
 ## 📸 效果预览
 
@@ -121,7 +135,7 @@
 │  · 收: 轮询/WebSocket/   │      │  · 白名单 & IM 命令      │
 │     webhook → ImMessage  │      │  · 审批桥 (approval/    │
 │  · 发: send(chatId,text) │      │    request waterfall)   │
-└─────────────────────────┘      │  · 分片 / 合并 / 格式化   │
+└─────────────────────────┘      │  · 交互提问桥 / 分片合并  │
         ▲                        └────────────────────────┘
         │  session/event · assistant/message · turn/end
         └────────────────────────────────────────────────────
@@ -222,6 +236,7 @@ agent 回复实时回推；需要批准时在聊天里回「批准 / 拒绝」�
       '*': ['u-common']            # 跨渠道通用
     mergeTimeoutSecs: 5            # 手机多段输入合并窗口
     approvalTimeoutSecs: 120       # 审批超时，超时转回本机批准
+    questionTimeoutSecs: 600       # IM 交互提问回答窗口；超时后仍可在 Web 回答
     summaryOnTurnEnd: true         # 每轮结束推送 [✅ 完成] 摘要
     stateDir: ''                   # 状态目录（默认 $DSH_HOME/dsh-im-gateway）
 ```
@@ -254,7 +269,7 @@ agent 回复实时回推；需要批准时在聊天里回「批准 / 拒绝」�
 ```bash
 npm install
 npm run build          # tsc 构建到 lib/
-npm test               # node --test（60 个用例：分片/合并/审批/网关/渠道协议）
+npm test               # node --test（70 个用例：分片/合并/审批/交互提问/网关/渠道协议）
 ```
 
 **新增一个渠道只需 4 步**：

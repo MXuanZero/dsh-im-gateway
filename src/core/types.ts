@@ -130,6 +130,8 @@ export interface ImGatewayConfig {
   longInputAckChars: number
   /** 审批超时（秒），超时转回本机批准体系。 */
   approvalTimeoutSecs: number
+  /** 交互式提问在 IM 侧的回答窗口（秒）；超时后仍可在网页回答。 */
+  questionTimeoutSecs: number
   /** 每轮结束是否推送摘要。 */
   summaryOnTurnEnd: boolean
   /** 状态/登录文件的落盘目录（默认 $DSH_HOME/dsh-im-gateway）。 */

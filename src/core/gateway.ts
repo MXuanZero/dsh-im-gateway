@@ -13,8 +13,10 @@ import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { createUserMessage, type ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { ApprovalOutcome } from '@deepseek-ai/dsh-user-approval'
-// 引入 dsh-user-approval 的模块增强（approval/request 事件进入 Events key）
+import type { AskUserQuestionAnswer, AskUserQuestionRequest } from '@deepseek-ai/dsh-user-questions'
+// 引入 dsh-user-approval / dsh-user-questions 的模块增强
 import type {} from '@deepseek-ai/dsh-user-approval'
+import type {} from '@deepseek-ai/dsh-user-questions'
 // 引入 dsh-attachment 模块增强（ctx.attachments 服务）
 import type {} from '@deepseek-ai/dsh-attachment'
 // 引入 dsh-tools 模块增强（ctx.tools 服务）
@@ -26,6 +28,7 @@ import { statSync } from 'node:fs'
 import { resolve, join } from 'node:path'
 import { homedir } from 'node:os'
 import { ApprovalBroker } from './approval.js'
+import { QuestionBroker, formatAnswerSummary, formatQuestionPrompt } from './questions.js'
 import { SessionMerger, type MergeResult } from './merge.js'
 import { SessionRouter, type ChatEntry } from './router.js'
 import { splitText } from './split.js'
@@ -48,6 +51,7 @@ const HELP_TEXT = [
   '/unbind — 解绑（bound 模式）',
   '/channels — 各渠道连接状态',
   '批准 / 拒绝 — 应答待批准的请求',
+  '编号 / 选项文字 — 回答待处理的 ask_user_question（多选用逗号）',
   '普通文本直接发给 agent；结尾 .. 表示还有后续，!! 表示立即提交',
 ].join('\n')
 
@@ -109,6 +113,8 @@ export class ImGateway {
   private readonly channels = new Map<string, ChannelAdapter>()
   private readonly router: SessionRouter
   private readonly broker = new ApprovalBroker()
+  private readonly questionBroker = new QuestionBroker()
+  private restoreUserQuestionsAsk: (() => void) | undefined
   private readonly merger: SessionMerger
   private readonly mergeBuffers = new Map<string, string>()
   private readonly disposeEvents: Array<() => void> = []
@@ -164,6 +170,9 @@ export class ImGateway {
         return this.handleApprovalRequest(req, next)
       }, { global: true }),
     )
+
+    // 交互式提问桥：保留 Web provider，同时让绑定 IM 并行回答 ask_user_question
+    this.installQuestionBridge()
 
     // 工具：agent 可以把工作区文件发给当前 IM 聊天（图片/视频/文档）
     this.registerSendMediaTool()
@@ -236,7 +245,9 @@ export class ImGateway {
         await channel.send(msg.chatId, reply).catch(() => undefined)
         return
       }
-      // 4. 媒体消息：直接注入（不过合并窗口）
+      // 4. ask_user_question 回答：在普通消息注入前消费
+      if (await this.answerQuestion(channel, msg)) return
+      // 5. 媒体消息：直接注入（不过合并窗口）
       if (msg.media && msg.media.length > 0) {
         const blocks = await this.buildMediaBlocks(msg)
         if (blocks.length > 0) {
@@ -245,7 +256,7 @@ export class ImGateway {
         }
         return
       }
-      // 5. 合并窗口
+      // 6. 合并窗口
       const key = `${channelId}:${msg.chatId}`
       const result = this.merger.ingest(key, msg.text)
       if (result.kind === 'flushed' && result.text) {
@@ -720,6 +731,96 @@ export class ImGateway {
     return record.header.createdAt ?? 0
   }
 
+  // ── 交互式提问桥（ask_user_question）──────────────────────
+
+  private installQuestionBridge(): void {
+    const service = this.ctx.userQuestions
+    const originalAsk = service.ask
+    const wrappedAsk = async (request: AskUserQuestionRequest): Promise<AskUserQuestionAnswer> => {
+      const sessionId = request.agent ? String(request.agent.id) : ''
+      const chats = sessionId ? this.router.chatsForSession(sessionId) : []
+      if (!sessionId || chats.length === 0) return originalAsk.call(service, request)
+
+      const questionTimeoutSecs = Math.max(1, this.config.questionTimeoutSecs ?? 600)
+      const timeoutMs = questionTimeoutSecs * 1000
+      const webAbort = new AbortController()
+      const forwardAbort = () => webAbort.abort(request.signal?.reason)
+      request.signal?.addEventListener('abort', forwardAbort, { once: true })
+      const imWait = this.questionBroker.wait(sessionId, request.questions, timeoutMs, request.signal)
+      await Promise.all(chats.map((chat) => this.deliver(chat, formatQuestionPrompt(request.questions, questionTimeoutSecs))))
+      this.logLine(`[questions] 会话 ${sessionId} 的 ${request.questions.length} 个问题已同步到 ${chats.length} 个 IM 聊天`)
+
+      const webWait = originalAsk.call(service, { ...request, signal: webAbort.signal }).then(
+        (answer) => ({ kind: 'web' as const, answer }),
+        (error: unknown) => ({ kind: 'web-error' as const, error }),
+      )
+      const finishWeb = async (): Promise<AskUserQuestionAnswer> => {
+        const web = await webWait
+        if (web.kind === 'web-error') throw web.error
+        this.questionBroker.finishFromWeb(sessionId, web.answer)
+        await this.broadcastToSession(sessionId, `✅ 已在网页端回答：${formatAnswerSummary(request.questions, web.answer)}`)
+        return web.answer
+      }
+
+      try {
+        const first = await Promise.race([webWait, imWait])
+        if (first.kind === 'web') {
+          this.questionBroker.finishFromWeb(sessionId, first.answer)
+          await this.broadcastToSession(sessionId, `✅ 已在网页端回答：${formatAnswerSummary(request.questions, first.answer)}`)
+          return first.answer
+        }
+        if (first.kind === 'web-error') {
+          this.questionBroker.cancel(sessionId)
+          throw first.error
+        }
+        if (first.kind === 'answered') {
+          webAbort.abort()
+          void webWait
+          await this.broadcastToSession(sessionId, `✅ 已选择：${formatAnswerSummary(request.questions, first.answer)}\n回答端：${first.source.label ?? first.source.channelId}`)
+          return first.answer
+        }
+        if (first.kind === 'external') return first.answer
+        if (first.kind === 'timeout') {
+          await this.broadcastToSession(sessionId, '⌛ IM 回答窗口已结束，请在网页端继续选择。')
+        }
+        // cancelled / busy / timeout：Web provider 仍是最终兜底。
+        return finishWeb()
+      } finally {
+        request.signal?.removeEventListener('abort', forwardAbort)
+      }
+    }
+    service.ask = wrappedAsk
+    this.restoreUserQuestionsAsk = () => {
+      if (service.ask === wrappedAsk) service.ask = originalAsk
+    }
+  }
+
+  private async answerQuestion(channel: ChannelAdapter, msg: ImMessage): Promise<boolean> {
+    const entry = this.router.get(channel.id, msg.chatId)
+    if (!entry) return false
+    const questions = this.questionBroker.questionsFor(entry.sessionId)
+    const result = this.questionBroker.answer(entry.sessionId, msg.text, {
+      channelId: channel.id,
+      chatId: msg.chatId,
+      label: channel.label,
+    })
+    if (result.kind === 'not-pending') return false
+    if (result.kind === 'invalid') {
+      await channel.send(msg.chatId, `⚠️ 无法识别这个选择：${result.message}`).catch(() => undefined)
+      return true
+    }
+    if (result.kind === 'already-answered') {
+      await channel.send(msg.chatId, `ℹ️ ${result.message}`).catch(() => undefined)
+      return true
+    }
+    if (questions) this.logLine(`[questions] 会话 ${entry.sessionId} 由 ${channel.id}:${msg.chatId} 回答：${formatAnswerSummary(questions, result.answer)}`)
+    return true
+  }
+
+  private async broadcastToSession(sessionId: string, text: string): Promise<void> {
+    await Promise.all(this.router.chatsForSession(sessionId).map((chat) => this.deliver(chat, text)))
+  }
+
   // ── 审批桥 ────────────────────────────────────────────────
 
   private async handleApprovalRequest(
@@ -808,12 +909,15 @@ export class ImGateway {
   // ── 生命周期 ──────────────────────────────────────────────
 
   dispose(): void {
+    this.restoreUserQuestionsAsk?.()
+    this.restoreUserQuestionsAsk = undefined
     for (const off of this.disposeEvents) off()
     this.disposeEvents.length = 0
     for (const off of this.disposeTools) off()
     this.disposeTools.length = 0
     this.merger.dispose()
     this.broker.dispose()
+    this.questionBroker.dispose()
   }
 
   async stopAgents(): Promise<void> {

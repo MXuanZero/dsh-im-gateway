@@ -3,9 +3,9 @@
  *
  * 把 dsh agent 接入 20+ 聊天渠道（Telegram / Discord / Slack / 飞书 / 微信 /
  * QQ / WhatsApp / Signal / Teams / LINE / Matrix / Mattermost / Google Chat /
- * IRC / Twitch / Nostr / Nextcloud Talk / Synology Chat / Zalo / iMessage /
- * WebChat …），统一提供：每聊天一个 agent 会话、/new /status /bind 等命令、
- * 审批远程应答（批准/拒绝）、手机多段输入合并、长回复分片、白名单、媒体收发。
+ * IRC / Twitch / Nostr / Nextcloud Talk / Synology Chat / Zalo / iMessage …），
+ * 统一提供：每聊天一个 agent 会话、/new /status /bind 等命令、审批远程应答、
+ * ask_user_question 交互提问桥、手机多段输入合并、长回复分片、白名单、媒体收发。
  *
  * 两种配置方式：
  * 1. Web GUI 设置面板「IM 网关」：点选渠道 → 扫码/填凭据 → 立即连接（无需重启）
@@ -20,6 +20,8 @@ import Schema from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-jobs'
 // dsh-host-webserver 的模块增强（ctx.webServer）
 import type {} from '@deepseek-ai/dsh-host-webserver'
+// dsh-user-questions 的模块增强（ctx.userQuestions）
+import type {} from '@deepseek-ai/dsh-user-questions'
 
 declare module '@deepseek-ai/dsh-jobs' {
   interface JobKindMap {
@@ -38,7 +40,7 @@ export const name = 'dsh-im-gateway'
 // agents：创建/查找 agent 会话；jobs：后台任务（扫码/轮询状态对 Web UI 可见）；
 // tools：注册 im_send_file（agent → IM 发文件）；attachments：图片入站转 image block；
 // webServer：提供设置面板调用的 HTTP API；agentPresets：创建/继续 agent 时挂入 preset
-export const inject = ['agents', 'jobs', 'tools', 'attachments', 'webServer', 'sessionQuery', 'agentPresets']
+export const inject = ['agents', 'jobs', 'tools', 'attachments', 'webServer', 'sessionQuery', 'agentPresets', 'userQuestions']
 
 /** 网关部署配置。 */
 export const Config: Schema<ImGatewayConfig> = Schema.object({
@@ -55,6 +57,7 @@ export const Config: Schema<ImGatewayConfig> = Schema.object({
   mergeTimeoutSecs: Schema.number().default(5),
   longInputAckChars: Schema.number().default(180),
   approvalTimeoutSecs: Schema.number().default(120),
+  questionTimeoutSecs: Schema.number().default(600),
   summaryOnTurnEnd: Schema.boolean().default(true),
   stateDir: Schema.string().default(''),
 })

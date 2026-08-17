@@ -3,9 +3,9 @@
  *
  * 把 dsh agent 接入 20+ 聊天渠道（Telegram / Discord / Slack / 飞书 / 微信 /
  * QQ / WhatsApp / Signal / Teams / LINE / Matrix / Mattermost / Google Chat /
- * IRC / Twitch / Nostr / Nextcloud Talk / Synology Chat / Zalo / iMessage /
- * WebChat …），统一提供：每聊天一个 agent 会话、/new /status /bind 等命令、
- * 审批远程应答（批准/拒绝）、手机多段输入合并、长回复分片、白名单、媒体收发。
+ * IRC / Twitch / Nostr / Nextcloud Talk / Synology Chat / Zalo / iMessage …），
+ * 统一提供：每聊天一个 agent 会话、/new /status /bind 等命令、审批远程应答、
+ * ask_user_question 交互提问桥、手机多段输入合并、长回复分片、白名单、媒体收发。
  *
  * 两种配置方式：
  * 1. Web GUI 设置面板「IM 网关」：点选渠道 → 扫码/填凭据 → 立即连接（无需重启）
