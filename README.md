@@ -9,7 +9,7 @@
   <img alt="Channels" src="https://img.shields.io/badge/channels-24%2B-238636">
   <img alt="DSH bundle" src="https://img.shields.io/badge/dsh-bundle%20plugin-4d6bfe">
   <img alt="PRs Welcome" src="https://img.shields.io/badge/PRs-welcome-brightgreen">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-47%20passed-238636">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-60%20passed-238636">
 </p>
 
 <p align="center"><b>English</b> · <a href="#中文">中文</a></p>
@@ -42,7 +42,16 @@
 </details>
 
 <details>
-<summary><b>方式 C · 本机已有项目目录</b></summary>
+<summary><b>方式 C · npm 一键安装（推荐新用户）</b></summary>
+
+```text
+请安装 dsh-im-gateway 插件：dsh plugin --profile web add dsh-im-gateway
+装完提醒我重启 dsh web。
+```
+</details>
+
+<details>
+<summary><b>方式 D · 本机已有项目目录</b></summary>
 
 ```text
 请把本机项目 dsh-im-gateway 安装为 dsh 插件：
