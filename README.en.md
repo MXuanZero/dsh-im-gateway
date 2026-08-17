@@ -101,6 +101,14 @@ Messages starting with `/` in any connected chat are commands:
 - 📦 **One-command install + visual setup** — a standard `dsh.bundle` plugin; connect channels from the Web GUI settings panel by scanning or pasting credentials, no restart needed
 - 🎯 **Beginner friendly** — WeChat/WhatsApp pop a QR code with one click; other channels use guided forms with live status
 
+## 📸 Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/wechat-chat.jpg" width="30%" alt="WeChat chat screenshot">
+  <img src="docs/screenshots/qq-chat.jpg" width="30%" alt="QQ chat screenshot">
+  <img src="docs/screenshots/feishu-chat.jpg" width="30%" alt="Feishu chat screenshot">
+</p>
+
 ## 🏗 Architecture
 
 ```

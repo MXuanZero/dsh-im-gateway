@@ -101,6 +101,14 @@
 - 📦 **一条命令安装 + 可视化连接** — 标准 `dsh.bundle` 插件；Web GUI 设置面板点选渠道、扫码/填凭据即连，无需重启
 - 🎯 **小白友好** — 微信/WhatsApp 点一下直接弹二维码；其余渠道表单引导，状态实时显示
 
+## 📸 效果预览
+
+<p align="center">
+  <img src="docs/screenshots/wechat-chat.jpg" width="30%" alt="微信聊天截图">
+  <img src="docs/screenshots/qq-chat.jpg" width="30%" alt="QQ 聊天截图">
+  <img src="docs/screenshots/feishu-chat.jpg" width="30%" alt="飞书聊天截图">
+</p>
+
 ## 🏗 架构
 
 ```

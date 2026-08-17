@@ -20,7 +20,8 @@
     "client.js",
     "cordis.patch.yml",
     "README.md",
-    "README.en.md"
+    "README.en.md",
+    "docs"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json && cp client.js lib/client.js",
