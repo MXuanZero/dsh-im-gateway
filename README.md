@@ -4,6 +4,8 @@
 <p align="center">Aggregated IM gateway for <b>DeepSeek Harness (dsh)</b> — drive your coding agents from <b>WeChat, Feishu, Telegram, Discord, QQ</b> and 20+ chat platforms, with unified sessions, remote approvals and one-command setup.</p>
 
 <p align="center">
+  <img alt="npm version" src="https://img.shields.io/npm/v/dsh-im-gateway?color=4d6bfe">
+  <img alt="npm downloads" src="https://img.shields.io/npm/dm/dsh-im-gateway?color=4d6bfe">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-4d6bfe">
   <img alt="Platform" src="https://img.shields.io/badge/platform-DeepSeek%20Harness-4d6bfe">
   <img alt="Channels" src="https://img.shields.io/badge/channels-24%2B-238636">
@@ -21,7 +23,16 @@
 > 任选一种方式，把下面整段提示词发给你的 dsh（Web GUI 聊天框 / `dsh --profile headless "…"` / 已接入的 IM 聊天），agent 会**自动完成下载、构建、安装**——不用手动敲命令。
 
 <details open>
-<summary><b>方式 A · GitHub 克隆安装（最稳妥，推荐）</b></summary>
+<summary><b>方式 A · npm 一键安装（推荐，已发布到 npm registry）</b></summary>
+
+```text
+请安装 dsh-im-gateway 插件：dsh plugin --profile web add dsh-im-gateway
+装完提醒我重启 dsh web。
+```
+</details>
+
+<details>
+<summary><b>方式 B · GitHub 克隆安装（最稳妥）</b></summary>
 
 ```text
 请帮我安装 dsh-im-gateway 插件（DeepSeek Harness 的聚合 IM 网关）：
@@ -33,20 +44,11 @@
 </details>
 
 <details>
-<summary><b>方式 B · 远程仓库直装（无需 clone，已实测可用）</b></summary>
+<summary><b>方式 C · 远程仓库直装（无需 clone，已实测可用）</b></summary>
 
 ```text
 请安装 dsh-im-gateway 插件：dsh plugin --profile web add https://github.com/zhuiyueya/dsh-im-gateway.git
 装完提醒我重启 dsh web（首次安装依赖约 1-2 分钟）。
-```
-</details>
-
-<details>
-<summary><b>方式 C · npm 一键安装（推荐新用户）</b></summary>
-
-```text
-请安装 dsh-im-gateway 插件：dsh plugin --profile web add dsh-im-gateway
-装完提醒我重启 dsh web。
 ```
 </details>
 
@@ -135,10 +137,14 @@ agent 回复 ← 网关(按渠道分片) ← session/event(assistant/message) �
 ### 1. 安装（一次）
 
 ```bash
+# 方式一：npm 安装（推荐）
+dsh plugin --profile web add dsh-im-gateway
+
+# 方式二：本地源码（开发/调试用）
 cd dsh-im-gateway
 npm install && npm run build
-
 dsh plugin --profile web add /path/to/dsh-im-gateway
+
 dsh web    # 重启 dsh（安装插件后需要重启一次）
 ```
 
@@ -240,7 +246,7 @@ agent 回复实时回推；需要批准时在聊天里回「批准 / 拒绝」�
 ```bash
 npm install
 npm run build          # tsc 构建到 lib/
-npm test               # node --test（31 个用例：分片/合并/审批/网关）
+npm test               # node --test（60 个用例：分片/合并/审批/网关/渠道协议）
 ```
 
 **新增一个渠道只需 4 步**：
