@@ -14,7 +14,7 @@
   <img alt="Tests" src="https://img.shields.io/badge/tests-60%20passed-238636">
 </p>
 
-<p align="center"><b>English</b> · <a href="#中文">中文</a></p>
+<p align="center"><a href="README.en.md">English</a> · <b>简体中文</b></p>
 
 ---
 
@@ -80,7 +80,7 @@
 - 📦 **一条命令安装 + 可视化连接** — 标准 `dsh.bundle` 插件；Web GUI 设置面板点选渠道、扫码/填凭据即连，无需重启
 - 🎯 **小白友好** — 微信/WhatsApp 点一下直接弹二维码；其余渠道表单引导，状态实时显示
 
-## 🏗 Architecture
+## 🏗 架构
 
 ```
    IM 渠道 (Telegram / 微信 / 飞书 / Discord / …)              DSH agent
@@ -104,7 +104,7 @@ agent 回复 ← 网关(按渠道分片) ← session/event(assistant/message) �
 工具批准 → approval/request → 推送到聊天 → 「批准」→ allowed-once
 ```
 
-## 📡 Supported Channels
+## 📡 支持的渠道
 
 | 渠道 | 状态 | 接收方式 | 需要 |
 |---|---|---|---|
@@ -132,7 +132,7 @@ agent 回复 ← 网关(按渠道分片) ← session/event(assistant/message) �
 
 ✅ 完整 = 收发可用 ｜ 🔄 动态依赖 = 未装 SDK 时提示安装 ｜ 🧪 实验性 = 需公网/专用基础设施 ｜ \*微信 = 官方 iLink 协议（媒体收发 + 语音转文字 + typing）
 
-## 🚀 Quick Start
+## 🚀 快速开始
 
 ### 1. 安装（一次）
 
@@ -159,7 +159,7 @@ dsh web    # 重启 dsh（安装插件后需要重启一次）
 
 > 🔧 **断开 vs 删除配置**：已连接渠道卡片上有两个按钮——「断开」只是临时停用（重启自动恢复）；「删除配置」会移除凭据（重启不再连接，需重新配置）。
 
-> 💡 手动配置方式（可选）：在 `~/.dsh/profiles/web/cordis.patch.yml` 写配置，凭据也可用环境变量，见下文「Configuration」。
+> 💡 手动配置方式（可选）：在 `~/.dsh/profiles/web/cordis.patch.yml` 写配置，凭据也可用环境变量，见下文「配置」。
 
 ### 3. 开始使用
 
@@ -174,7 +174,7 @@ dsh web    # 重启 dsh（安装插件后需要重启一次）
 
 agent 回复实时回推；需要批准时在聊天里回「批准 / 拒绝」；agent 还可以用 `im_send_file` 把文件（截图/报告）直接发到聊天。
 
-## 💬 IM Commands
+## 💬 IM 命令
 
 | 命令 | 说明 |
 |---|---|
@@ -187,7 +187,7 @@ agent 回复实时回推；需要批准时在聊天里回「批准 / 拒绝」�
 | `批准` / `拒绝` | 应答待批准请求（也支持 yes / no / 同意） |
 | 普通文本 | 发给 agent；结尾 `..` 表示还有后续，`!!` 立即提交 |
 
-## ⚙️ Configuration
+## ⚙️ 配置
 
 所有配置写在 profile 的 `cordis.patch.yml` 的 `im-gateway` 行；凭据也可用环境变量（见下表）。
 
@@ -233,7 +233,7 @@ agent 回复实时回推；需要批准时在聊天里回「批准 / 拒绝」�
 | wechat | `enabled: true` | — （iLink 扫码） |
 | whatsapp | `enabled: true` | — （Baileys 扫码） |
 
-## 🔐 Security
+## 🔐 安全
 
 - **微信为腾讯官方 iLink Bot 协议**（与 OpenClaw 官方插件 `@tencent-weixin/openclaw-weixin` 同协议，2026 年官方开放）：仅私聊、一个账号一个 poller，建议使用**专用小号**；使用即表示同意《微信ClawBot功能使用条款》
 - **白名单默认拒绝一切未知用户**；审批应答强制校验会话归属（pending approval id 一一对应）
@@ -241,7 +241,7 @@ agent 回复实时回推；需要批准时在聊天里回「批准 / 拒绝」�
 - 实验性/骨架渠道（Teams、Google Chat、Tlon、元宝、语音）启用前请阅读源码
 - 第三方插件即第三方代码——安装前请审阅源码，建议先在隔离环境试用
 
-## 🧪 Development
+## 🧪 开发
 
 ```bash
 npm install
@@ -270,13 +270,13 @@ export function createYourChannel(config, log): ChannelAdapter | undefined {
 }
 ```
 
-## 🤝 Contributing
+## 🤝 贡献
 
 - 修 bug、补渠道、完善文档都欢迎！
-- 请先 `npm test` 保证 31 个用例全绿
+- 请先 `npm test` 保证 60 个用例全绿
 - 给仓库加 `dsh-plugin` 和 `deepseek-harness` topic 可以进 awesome 插件列表
 
-## 📄 License
+## 📄 许可证
 
 [MIT](./LICENSE) © zhuiyueya
 

@@ -1,0 +1,286 @@
+# 🐋 dsh-im-gateway
+
+<h3 align="center">Connect DeepSeek Harness to every chat app you use</h3>
+<p align="center">Aggregated IM gateway for <b>DeepSeek Harness (dsh)</b> — drive your coding agents from <b>WeChat, Feishu, Telegram, Discord, QQ</b> and 20+ chat platforms, with unified sessions, remote approvals and one-command setup.</p>
+
+<p align="center">
+  <img alt="npm version" src="https://img.shields.io/npm/v/dsh-im-gateway?color=4d6bfe">
+  <img alt="npm downloads" src="https://img.shields.io/npm/dm/dsh-im-gateway?color=4d6bfe">
+  <img alt="License" src="https://img.shields.io/badge/license-MIT-4d6bfe">
+  <img alt="Platform" src="https://img.shields.io/badge/platform-DeepSeek%20Harness-4d6bfe">
+  <img alt="Channels" src="https://img.shields.io/badge/channels-24%2B-238636">
+  <img alt="DSH bundle" src="https://img.shields.io/badge/dsh-bundle%20plugin-4d6bfe">
+  <img alt="PRs Welcome" src="https://img.shields.io/badge/PRs-welcome-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-60%20passed-238636">
+</p>
+
+<p align="center"><b>English</b> · <a href="README.md">简体中文</a></p>
+
+---
+
+## ⚡ One-command install: just paste a prompt into your dsh
+
+> Pick any option below and paste the whole prompt into your dsh (Web GUI chat box / `dsh --profile headless "…"` / any connected IM chat) — the agent will **download, build and install automatically**. No manual commands needed.
+
+<details open>
+<summary><b>Option A · Install from npm (recommended, published to the npm registry)</b></summary>
+
+```text
+Please install the dsh-im-gateway plugin: dsh plugin --profile web add dsh-im-gateway
+Tell me when it's done and remind me to restart dsh web.
+```
+</details>
+
+<details>
+<summary><b>Option B · Clone from GitHub (most reliable)</b></summary>
+
+```text
+Please install the dsh-im-gateway plugin (the aggregated IM gateway for DeepSeek Harness):
+1. Run git clone --depth 1 https://github.com/zhuiyueya/dsh-im-gateway.git /tmp/dsh-im-gateway
+2. Run cd /tmp/dsh-im-gateway && npm install && npm run build
+3. Run dsh plugin --profile web add /tmp/dsh-im-gateway
+4. Report the result; if it asks for a restart, remind me to restart dsh web.
+```
+</details>
+
+<details>
+<summary><b>Option C · Install straight from the git URL (no clone, tested)</b></summary>
+
+```text
+Please install the dsh-im-gateway plugin: dsh plugin --profile web add https://github.com/zhuiyueya/dsh-im-gateway.git
+Remind me to restart dsh web when done (first install takes 1–2 min for dependencies).
+```
+</details>
+
+<details>
+<summary><b>Option D · Local project directory</b></summary>
+
+```text
+Please install the local dsh-im-gateway project as a dsh plugin:
+1. cd into the project and run npm install && npm run build
+2. Run dsh plugin --profile web add <absolute path to project>
+3. Remind me to restart dsh web.
+```
+</details>
+
+After install: **open the dsh Web GUI → Settings ⚙️ → 🐋 IM Gateway → click a channel to connect** (WeChat/WhatsApp scan-to-login, everything else just paste credentials).
+
+---
+
+## ✨ Highlights
+
+- 🌐 **23+ channels covered** — aligned with OpenClaw's channel surface: WeChat, Feishu, Telegram, Discord, Slack, QQ, WhatsApp, Signal, Teams, LINE, Matrix, Mattermost, IRC, Twitch, Nostr, Zalo, iMessage…
+- 🔁 **One agent session per chat** — chatting in a group drives the agent, replies stream back in real time; `/new` starts a fresh session, `/bind` attaches an existing one
+- ✅ **Remote approval bridge** — when the agent requests a tool approval it's pushed to the chat; reply 「approve / reject」 right there, and it falls back to the local approval system on timeout
+- 📱 **Mobile multi-part input merge** — `..` means "more coming", `!!` submits immediately, bare text merges within a 5s window, auto-recovers after a crash
+- ✂️ **Smart splitting of long replies** — chunks by each channel's limit, breaks at newlines/periods first, numbered `(i/n)` and convergent
+- 🛡️ **Allowlist-safe by default** — unknown users are rejected by default; approval replies are strictly checked against session ownership
+- 🔑 **QR login + scanless restore** — WeChat / WhatsApp QR login links are persisted to disk; login state (bot_token + poll cursor) is saved, so **connections auto-restore after restart without rescanning**
+- 🖼️ **Media in and out** — WeChat fully supports images/voice (server-side transcription)/files/video (CDN AES-128-ECB encrypted); agents can send workspace files into chats via the `im_send_file` tool
+- 📦 **One-command install + visual setup** — a standard `dsh.bundle` plugin; connect channels from the Web GUI settings panel by scanning or pasting credentials, no restart needed
+- 🎯 **Beginner friendly** — WeChat/WhatsApp pop a QR code with one click; other channels use guided forms with live status
+
+## 🏗 Architecture
+
+```
+   IM channels (Telegram / WeChat / Feishu / Discord / …)       DSH agent
+        │  adapter normalizes inbound                              ▲
+        ▼                                                         │
+┌─────────────────────────┐      ┌────────────────────────┐      │
+│  ChannelAdapter          │◄────►│  ImGateway (core)       │──────┘
+│  · one adapter per channel│     │  · session routing      │
+│  · recv: poll/WebSocket/ │      │    (per-chat)           │
+│    webhook → ImMessage   │      │  · allowlist & IM cmds  │
+│  · send: send(chatId,    │      │  · approval bridge      │
+│    text)                 │      │  · split/merge/format   │
+└─────────────────────────┘      └────────────────────────┘
+        ▲
+        │  session/event · assistant/message · turn/end
+        └────────────────────────────────────────────────────
+```
+
+```
+user message → channel adapter → gateway (allowlist → merge → route) → agent.followup()
+agent reply  ← gateway (split per channel) ← session/event(assistant/message) ← agent
+tool approval → approval/request → pushed to chat → 「approve」→ allowed-once
+```
+
+## 📡 Supported Channels
+
+| Channel | Status | Receive mode | Requires |
+|---|---|---|---|
+| **Telegram** | ✅ Full | Bot API long-polling | @BotFather token |
+| **Discord** | ✅ Full | Gateway WebSocket | Bot token |
+| **Slack** | ✅ Full | Socket Mode | xoxb- + xapp- token |
+| **Feishu / Lark** | ✅ Full | Official SDK long-connection | App ID + Secret |
+| **WeChat** | ✅ Full* | iLink QR login (official protocol) | Dedicated account ⚠️ |
+| **QQ Bot** | ✅ Full | Official WebSocket | AppID + Secret |
+| **LINE** | ✅ Full | REST + webhook | Channel token |
+| **Matrix** | ✅ Full | Client sync | Homeserver + token |
+| **Mattermost** | ✅ Full | WebSocket + REST | Server URL + token |
+| **IRC** | ✅ Full | Native socket | Server address |
+| **Twitch** | ✅ Full | WebSocket IRC | OAuth token |
+| **Signal** | ✅ Full | signal-cli subprocess | Local signal-cli |
+| **Nextcloud Talk** | ✅ Full | REST polling | Instance account |
+| **Synology Chat** | ✅ Full | webhook | Incoming webhook |
+| **Zalo** | ✅ Full | REST + webhook | OA token |
+| **iMessage** | ✅ Full* | imsg / osascript | macOS |
+| **WhatsApp** | 🔄 Dynamic dep | Baileys QR | `npm i @whiskeysockets/baileys` |
+| **Nostr** | 🔄 Dynamic dep | NIP-04 DM | `npm i @noble/curves` |
+| **Teams** | 🧪 Experimental | Bot Framework | Azure registration |
+| **Google Chat** | 🧪 Experimental | webhook | Public endpoint |
+| **Tlon / Yuanbao / Voice** | 🧪 Skeleton | — | Infrastructure |
+
+✅ Full = send & receive work ｜ 🔄 Dynamic dep = prompts to install SDK if missing ｜ 🧪 Experimental = needs public network / dedicated infra ｜ \*WeChat = official iLink protocol (media + voice-to-text + typing)
+
+## 🚀 Quick Start
+
+### 1. Install (once)
+
+```bash
+# Option 1: from npm (recommended)
+dsh plugin --profile web add dsh-im-gateway
+
+# Option 2: local source (development/debugging)
+cd dsh-im-gateway
+npm install && npm run build
+dsh plugin --profile web add /path/to/dsh-im-gateway
+
+dsh web    # restart dsh (required once after installing a plugin)
+```
+
+### 2. Connect channels (everything after this lives in the web UI, no config files)
+
+Open the dsh Web GUI (default http://localhost:3080) → **Settings ⚙️ → 「🐋 IM Gateway」**:
+
+- **WeChat / WhatsApp**: click 「Connect (scan)」→ a **QR code** pops up right on the page, scan with your phone and confirm ✅
+- **Feishu / Telegram / QQ Bot / Discord / Slack …**: click 「Enter credentials」→ paste the token as prompted → 「Save & Connect」✅
+
+No restart needed after connecting; status updates live (waiting for scan / connected / error). **All configured channels auto-reconnect after a dsh restart** (WeChat login state is persisted, no rescanning).
+
+> 🔧 **Disconnect vs Delete config**: connected channel cards have two buttons — 「Disconnect」 just pauses it temporarily (auto-restored on restart); 「Delete config」 removes the credentials (won't reconnect until reconfigured).
+
+> 💡 Manual config (optional): write config in `~/.dsh/profiles/web/cordis.patch.yml`; credentials can also come from environment variables — see 「Configuration」 below.
+
+### 3. Start using it
+
+Message your bot in any connected chat app:
+
+```
+/help        ← available commands
+Hi, take a look at my current workspace    ← plain chat = drive the agent
+```
+
+> 🔔 **First use requires authorization** (secure default): your first message gets an "unauthorized" reply, while a **「Users requesting access」** banner appears at the top of the IM Gateway settings panel — click 「Allow」 and you're in, no need to hunt for user IDs.
+
+Agent replies stream back in real time; when approval is needed, reply 「approve / reject」 in the chat; the agent can also use `im_send_file` to send files (screenshots/reports) straight into the chat.
+
+## 💬 IM Commands
+
+| Command | Description |
+|---|---|
+| `/help` | Help |
+| `/status` | Current session / pending approvals |
+| `/new` · `/clear` | Start a brand-new session (per-chat mode) |
+| `/bind <session-id>` | Bind an existing DSH session (bound mode) |
+| `/unbind` | Unbind |
+| `/channels` | Connection status of each channel |
+| `approve` / `reject` | Answer a pending approval (also `yes` / `no` / `同意`) |
+| Plain text | Sent to the agent; trailing `..` means "more coming", `!!` submits immediately |
+
+## ⚙️ Configuration
+
+All config goes under the `im-gateway` entry in the profile's `cordis.patch.yml`; credentials can also use environment variables (see table below).
+
+### Common config
+
+```yaml
+- id: im-gateway
+  config:
+    sessionMode: per-chat          # per-chat (default) | bound
+    cwd: /path/to/workspace        # agent working directory
+    provider: deepseek-official    # LLM provider (defaults to dsh)
+    model: deepseek-v4-flash       # model (defaults to dsh)
+    allowAllUsers: true            # allow all users out of the box; set false for control
+    allowedUserIds:                # allowlist per channel (used when allowAllUsers=false)
+      telegram: ['123456789']
+      '*': ['u-common']            # cross-channel common users
+    mergeTimeoutSecs: 5            # mobile multi-part merge window
+    approvalTimeoutSecs: 120       # approval timeout, then fall back to local approval
+    summaryOnTurnEnd: true         # push a [✅ done] summary after each turn
+    stateDir: ''                   # state dir (default $DSH_HOME/dsh-im-gateway)
+```
+
+### Channel credentials cheat sheet
+
+| Channel | Config fields | Environment variables |
+|---|---|---|
+| telegram | `token` | `DSH_TELEGRAM_TOKEN` |
+| discord | `token` | `DSH_DISCORD_TOKEN` |
+| slack | `token` + `appToken` | `DSH_SLACK_TOKEN` / `DSH_SLACK_APP_TOKEN` |
+| feishu | `appId` + `appSecret` | `DSH_FEISHU_APP_ID` / `DSH_FEISHU_APP_SECRET` |
+| qqbot | `appId` + `appSecret` | `DSH_QQ_APP_ID` / `DSH_QQ_APP_SECRET` |
+| signal | `cli` + `phone` | `DSH_SIGNAL_CLI` / `DSH_SIGNAL_PHONE` |
+| line | `channelToken` + `channelSecret` | `DSH_LINE_TOKEN` / `DSH_LINE_SECRET` |
+| matrix | `homeserver` + `accessToken` | `DSH_MATRIX_HOMESERVER` / `DSH_MATRIX_ACCESS_TOKEN` |
+| mattermost | `serverUrl` + `token` | `DSH_MATTERMOST_URL` / `DSH_MATTERMOST_TOKEN` |
+| irc | `server` + `nick` + `channels` | `DSH_IRC_SERVER` |
+| twitch | `botName` + `token` | `DSH_TWITCH_BOT_NAME` / `DSH_TWITCH_TOKEN` |
+| nostr | `privateKey` + `relays` | `DSH_NOSTR_PRIVATE_KEY` / `DSH_NOSTR_RELAYS` |
+| nextcloud | `serverUrl` + `user` + `password` | `DSH_NEXTCLOUD_URL` etc. |
+| synology | `webhookUrl` | `DSH_SYNOLOGY_WEBHOOK_URL` |
+| zalo | `accessToken` | `DSH_ZALO_TOKEN` |
+| imessage | `enabled` + `imsgPath` | `DSH_IMSG_PATH` |
+| wechat | `enabled: true` | — (iLink QR) |
+| whatsapp | `enabled: true` | — (Baileys QR) |
+
+## 🔐 Security
+
+- **WeChat uses Tencent's official iLink Bot protocol** (the same protocol as OpenClaw's official `@tencent-weixin/openclaw-weixin` plugin, opened officially in 2026): private chats only, one account per poller — please use a **dedicated account**; usage implies agreement to the 《WeChat ClawBot Terms of Use》
+- **The allowlist rejects all unknown users by default**; approval replies are strictly checked against session ownership (pending approval ids match one-to-one)
+- **Don't let multiple DSH processes share the same `DSH_HOME`**: concurrent restores of the same session can write duplicate `seq` values and corrupt history. The gateway rejects a second instance; for testing use a separate directory, e.g. `DSH_HOME=/tmp/dsh-test-8788 dsh web`.
+- Review the source before enabling experimental/skeleton channels (Teams, Google Chat, Tlon, Yuanbao, Voice)
+- Third-party plugins are third-party code — review the source before installing, and try it in an isolated environment first
+
+## 🧪 Development
+
+```bash
+npm install
+npm run build          # tsc builds to lib/
+npm test               # node --test (60 cases: split/merge/approval/gateway/channel protocols)
+```
+
+**Adding a new channel takes 4 steps**:
+
+1. Create `src/channels/yourchannel.ts` implementing `ChannelAdapter` (6 methods)
+2. Register it in `src/channels/index.ts`
+3. Add the config fields in the Config in `src/index.ts`
+4. Add a row to the README channel table ✨
+
+```typescript
+export function createYourChannel(config, log): ChannelAdapter | undefined {
+  if (!config.token) return undefined          // no credentials → don't start
+  return {
+    id: 'yourchannel', label: 'YourChannel', maxMessageLength: 2000,
+    start() { /* connect / poll / scan */ },
+    stop() { /* cleanup */ },
+    async send(chatId, text) { /* send message */ },
+    setMessageHandler(h) { /* inbound callback */ },
+    status() { return 'running' },
+  }
+}
+```
+
+## 🤝 Contributing
+
+- Bug fixes, new channels and doc improvements are all welcome!
+- Please make sure `npm test` passes all 60 cases first
+- Add the `dsh-plugin` and `deepseek-harness` topics to the repo to get into the awesome-plugin list
+
+## 📄 License
+
+[MIT](./LICENSE) © zhuiyueya
+
+---
+
+<p align="center">Made with 🐋 for the DeepSeek Harness ecosystem</p>
