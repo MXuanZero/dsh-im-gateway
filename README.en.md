@@ -67,6 +67,27 @@ After install: **open the dsh Web GUI → Settings ⚙️ → 🐋 IM Gateway �
 
 ---
 
+## 💬 IM Commands
+
+Messages starting with `/` in any connected chat are commands:
+
+| Command | Description |
+|---|---|
+| `/help` | This help |
+| `/status` | Current session (session id / workspace / pending approvals) |
+| `/new` · `/clear` | Start a brand-new session (per-chat mode) |
+| `/workspaces` | List all workspaces |
+| `/workspace <path>` | Switch workspace (takes effect on the next `/new`) |
+| `/sessions [all\|path]` | List sessions (default: current workspace; `all` for everything) |
+| `/continue <session-id>` | Resume an existing session (across channels/workspaces) |
+| `/bind <session-id>` | Bind a local live session (bound mode) |
+| `/unbind` | Unbind (bound mode) |
+| `/channels` | Connection status of each channel |
+| `approve` / `reject` | Answer a pending approval (also `yes` / `no` / `同意`) |
+| Plain text | Sent to the agent; trailing `..` means "more coming", `!!` submits immediately |
+
+---
+
 ## ✨ Highlights
 
 - 🌐 **23+ channels covered** — aligned with OpenClaw's channel surface: WeChat, Feishu, Telegram, Discord, Slack, QQ, WhatsApp, Signal, Teams, LINE, Matrix, Mattermost, IRC, Twitch, Nostr, Zalo, iMessage…
@@ -175,19 +196,6 @@ Hi, take a look at my current workspace    ← plain chat = drive the agent
 
 Agent replies stream back in real time; when approval is needed, reply 「approve / reject」 in the chat; the agent can also use `im_send_file` to send files (screenshots/reports) straight into the chat.
 
-## 💬 IM Commands
-
-| Command | Description |
-|---|---|
-| `/help` | Help |
-| `/status` | Current session / pending approvals |
-| `/new` · `/clear` | Start a brand-new session (per-chat mode) |
-| `/bind <session-id>` | Bind an existing DSH session (bound mode) |
-| `/unbind` | Unbind |
-| `/channels` | Connection status of each channel |
-| `approve` / `reject` | Answer a pending approval (also `yes` / `no` / `同意`) |
-| Plain text | Sent to the agent; trailing `..` means "more coming", `!!` submits immediately |
-
 ## ⚙️ Configuration
 
 All config goes under the `im-gateway` entry in the profile's `cordis.patch.yml`; credentials can also use environment variables (see table below).
@@ -233,14 +241,6 @@ All config goes under the `im-gateway` entry in the profile's `cordis.patch.yml`
 | imessage | `enabled` + `imsgPath` | `DSH_IMSG_PATH` |
 | wechat | `enabled: true` | — (iLink QR) |
 | whatsapp | `enabled: true` | — (Baileys QR) |
-
-## 🔐 Security
-
-- **WeChat uses Tencent's official iLink Bot protocol** (the same protocol as OpenClaw's official `@tencent-weixin/openclaw-weixin` plugin, opened officially in 2026): private chats only, one account per poller — please use a **dedicated account**; usage implies agreement to the 《WeChat ClawBot Terms of Use》
-- **The allowlist rejects all unknown users by default**; approval replies are strictly checked against session ownership (pending approval ids match one-to-one)
-- **Don't let multiple DSH processes share the same `DSH_HOME`**: concurrent restores of the same session can write duplicate `seq` values and corrupt history. The gateway rejects a second instance; for testing use a separate directory, e.g. `DSH_HOME=/tmp/dsh-test-8788 dsh web`.
-- Review the source before enabling experimental/skeleton channels (Teams, Google Chat, Tlon, Yuanbao, Voice)
-- Third-party plugins are third-party code — review the source before installing, and try it in an isolated environment first
 
 ## 🧪 Development
 

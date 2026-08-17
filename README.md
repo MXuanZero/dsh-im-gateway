@@ -67,6 +67,27 @@
 
 ---
 
+## 💬 IM 命令
+
+在连接好的聊天软件里，发给机器人的消息以 `/` 开头即命令：
+
+| 命令 | 说明 |
+|---|---|
+| `/help` | 本帮助 |
+| `/status` | 查询当前会话（会话 id / 工作区 / 待批准） |
+| `/new` · `/clear` | 开启全新会话（per-chat 模式） |
+| `/workspaces` | 列出所有工作区 |
+| `/workspace <路径>` | 切换工作区（后续 `/new` 生效） |
+| `/sessions [all\|路径]` | 列出会话（默认当前工作区；`all` 全部） |
+| `/continue <会话id>` | 继续已有会话（跨渠道/跨工作区） |
+| `/bind <session-id>` | 绑定本机 live 会话（bound 模式） |
+| `/unbind` | 解绑（bound 模式） |
+| `/channels` | 各渠道连接状态 |
+| `批准` / `拒绝` | 应答待批准请求（也支持 yes / no / 同意） |
+| 普通文本 | 发给 agent；结尾 `..` 表示还有后续，`!!` 立即提交 |
+
+---
+
 ## ✨ Highlights
 
 - 🌐 **23+ 渠道全覆盖** — 对齐 OpenClaw 的渠道面：微信、飞书、Telegram、Discord、Slack、QQ、WhatsApp、Signal、Teams、LINE、Matrix、Mattermost、IRC、Twitch、Nostr、Zalo、iMessage……
@@ -174,19 +195,6 @@ dsh web    # 重启 dsh（安装插件后需要重启一次）
 
 agent 回复实时回推；需要批准时在聊天里回「批准 / 拒绝」；agent 还可以用 `im_send_file` 把文件（截图/报告）直接发到聊天。
 
-## 💬 IM 命令
-
-| 命令 | 说明 |
-|---|---|
-| `/help` | 帮助 |
-| `/status` | 当前会话 / 待批准数 |
-| `/new` · `/clear` | 开启全新会话（per-chat 模式） |
-| `/bind <session-id>` | 绑定已有 DSH 会话（bound 模式） |
-| `/unbind` | 解绑 |
-| `/channels` | 各渠道连接状态 |
-| `批准` / `拒绝` | 应答待批准请求（也支持 yes / no / 同意） |
-| 普通文本 | 发给 agent；结尾 `..` 表示还有后续，`!!` 立即提交 |
-
 ## ⚙️ 配置
 
 所有配置写在 profile 的 `cordis.patch.yml` 的 `im-gateway` 行；凭据也可用环境变量（见下表）。
@@ -232,14 +240,6 @@ agent 回复实时回推；需要批准时在聊天里回「批准 / 拒绝」�
 | imessage | `enabled` + `imsgPath` | `DSH_IMSG_PATH` |
 | wechat | `enabled: true` | — （iLink 扫码） |
 | whatsapp | `enabled: true` | — （Baileys 扫码） |
-
-## 🔐 安全
-
-- **微信为腾讯官方 iLink Bot 协议**（与 OpenClaw 官方插件 `@tencent-weixin/openclaw-weixin` 同协议，2026 年官方开放）：仅私聊、一个账号一个 poller，建议使用**专用小号**；使用即表示同意《微信ClawBot功能使用条款》
-- **白名单默认拒绝一切未知用户**；审批应答强制校验会话归属（pending approval id 一一对应）
-- **不要让多个 DSH 进程共享同一个 `DSH_HOME`**：并发恢复同一会话会写出重复 `seq` 并损坏历史。网关会拒绝第二个实例；测试实例请使用独立目录，例如 `DSH_HOME=/tmp/dsh-test-8788 dsh web`。
-- 实验性/骨架渠道（Teams、Google Chat、Tlon、元宝、语音）启用前请阅读源码
-- 第三方插件即第三方代码——安装前请审阅源码，建议先在隔离环境试用
 
 ## 🧪 开发
 
